@@ -1,10 +1,9 @@
 import type { Metrics } from "./types";
 
-// Snapshot real do HubSpot (puxado em 03/06/2026). Serve de fallback para o
-// dashboard renderizar mesmo sem as variáveis de ambiente configuradas.
-// Quando HUBSPOT_TOKEN / N8N_API_KEY estiverem setados, os valores vêm ao vivo.
+// Snapshot real do HubSpot (puxado em 03/06/2026). Fallback p/ render sem env.
+// Com HUBSPOT_TOKEN / N8N_* setados, tudo vem ao vivo.
 export const SEED: Metrics = {
-  mensagens: null, // só o n8n sabe (egress liberado na Vercel)
+  mensagens: null,
   conversasUnicas: 26,
   escaladas: 8,
   taxaEscalacao: 8 / 26,
@@ -20,13 +19,14 @@ export const SEED: Metrics = {
   ],
   motivosEscalacao: [],
   escalacoesPorDia: [],
+  regioes: [],
+  contatos: [],
+  conversas: [],
   custo: {
-    modelo: "—",
-    totalUSD: null,
-    porMensagemUSD: null,
-    estimado: true,
+    modelo: "—", totalUSD: null, porMensagemUSD: null, estimado: true,
     nota: "Configure N8N_API_KEY e LLM_MODEL para estimar o custo.",
   },
   fontes: { hubspot: false, n8n: false },
+  excluidosTeste: 0,
   atualizadoEm: new Date().toISOString(),
 };

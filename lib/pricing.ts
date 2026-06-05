@@ -39,3 +39,34 @@ export function normalizarTopico(raw: string | null | undefined): string {
   // fallback: capitaliza a primeira letra do texto cru
   return raw.trim().charAt(0).toUpperCase() + raw.trim().slice(1);
 }
+
+// --- Região (UF) -----------------------------------------------------------
+const UF_VALIDAS = new Set(["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]);
+const NOME_UF: Record<string, string> = {
+  "rio de janeiro":"RJ","sao paulo":"SP","rio grande do sul":"RS","minas gerais":"MG",
+  "parana":"PR","pernambuco":"PE","bahia":"BA","distrito federal":"DF","mato grosso do sul":"MS",
+  "santa catarina":"SC","goias":"GO","ceara":"CE","espirito santo":"ES","para":"PA","paraiba":"PB",
+  "amazonas":"AM","maranhao":"MA","rio grande do norte":"RN","mato grosso":"MT","piaui":"PI",
+  "alagoas":"AL","sergipe":"SE","rondonia":"RO","tocantins":"TO","acre":"AC","amapa":"AP","roraima":"RR",
+};
+
+// Campo `state` é texto livre e vem sujo (ex.: "sp/?utm_source=email", "rio de janeiro").
+export function normalizarUF(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  // remove cauda de UTM/path mantendo espaços do nome do estado
+  const limpo = semAcento(raw.trim().toLowerCase()).replace(/[\/?&].*$/, "").trim();
+  if (!limpo) return "—";
+  if (NOME_UF[limpo]) return NOME_UF[limpo];
+  const token = limpo.split(/\s+/)[0].toUpperCase();
+  if (UF_VALIDAS.has(token)) return token;
+  return "—";
+}
+
+// Contatos de teste/internos que não devem contar nas métricas.
+export function ehTeste(email: string | null | undefined, nome: string | null | undefined): boolean {
+  const e = (email ?? "").toLowerCase();
+  const n = (nome ?? "").toLowerCase();
+  if (e.endsWith("@profissionaissa.com")) return true;
+  if (e.includes("teste") || n.includes("teste")) return true;
+  return false;
+}
