@@ -112,6 +112,94 @@ function BrazilMap({ regioes }: { regioes: RegiaoCount[] }) {
   );
 }
 
+/* ---------------- Drill-down das Principais Dúvidas ---------------- */
+function DuvidasDrill({ contatos }: { contatos: Contato[] }) {
+  const [sel, setSel] = useState(0);
+  const grupos = useMemo(() => {
+    const m = new Map<string, Contato[]>();
+    for (const c of contatos) { if (!m.has(c.motivo)) m.set(c.motivo, []); m.get(c.motivo)!.push(c); }
+    return [...m.entries()]
+      .map(([label, people]) => ({ label, value: people.length, people: people.slice().sort((a, b) => b.criadoEm.localeCompare(a.criadoEm)) }))
+      .sort((a, b) => b.value - a.value);
+  }, [contatos]);
+  if (!grupos.length) return <div className="empty">sem dados ainda</div>;
+  const max = Math.max(...grupos.map((g) => g.value));
+  const total = grupos.reduce((s, g) => s + g.value, 0);
+  const i = Math.min(sel, grupos.length - 1);
+  const selG = grupos[i];
+  return (
+    <div className="duv">
+      <div className="bars">
+        {grupos.map((g, idx) => (
+          <div className={`bar-row click ${idx === i ? "sel" : ""}`} key={g.label} onClick={() => setSel(idx)}>
+            <div className="bl">{g.label}</div>
+            <div className="bar-track"><div className="bar-fill" style={{ width: `${(g.value / max) * 100}%` }} /></div>
+            <div className="bv">{g.value}</div>
+            <div className="bp">{Math.round((g.value / total) * 100)}%</div>
+          </div>
+        ))}
+      </div>
+      <div className="people">
+        <div className="phead"><b>{selG.value}</b> contato(s) em “{selG.label}”</div>
+        <div className="plist">
+          {selG.people.map((pp) => (
+            <div className="prow" key={pp.id || pp.email}>
+              <div className="av">{iniciais(pp.nome)}</div>
+              <div><div className="pn">{pp.nome}</div><div className="pm">{dataCurta(pp.criadoEm)}</div></div>
+              <div className="pmeta">{pp.uf !== "—" && <span className="ufb">{pp.uf}</span>}<span className={`escpill ${pp.escalou ? "on" : ""}`}>{pp.escalou ? "escalado" : "bot"}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Volume por dia (chamaram × escalados) ---------------- */
+function VolumePorDia({ contatos }: { contatos: Contato[] }) {
+  const [tip, setTip] = useState<{ x: number; y: number; date: string; cham: number; esc: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const dias = useMemo(() => {
+    const m = new Map<string, { cham: number; esc: number }>();
+    for (const c of contatos) {
+      const dia = (c.criadoEm || "").slice(0, 10); if (!dia) continue;
+      if (!m.has(dia)) m.set(dia, { cham: 0, esc: 0 });
+      const o = m.get(dia)!; o.cham++; if (c.escalou) o.esc++;
+    }
+    return [...m.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date));
+  }, [contatos]);
+  if (!dias.length) return <div className="empty">sem datas registradas ainda</div>;
+  const vmax = Math.max(...dias.map((d) => d.cham));
+  return (
+    <>
+      <div className="vol-legend"><span><i className="i-cham" /> chamaram</span><span><i className="i-esc" /> escalados p/ humano</span></div>
+      <div className="vol" ref={boxRef}>
+        {dias.map((d) => {
+          const h = (d.cham / vmax) * 100;
+          const escFrac = d.cham ? d.esc / d.cham : 0;
+          return (
+            <div className="vcol" key={d.date}
+              onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, date: d.date, cham: d.cham, esc: d.esc }); }}
+              onMouseLeave={() => setTip(null)}>
+              <span className="vtot">{d.cham}</span>
+              <div className="vstack" style={{ height: `${h}%` }}>
+                <div className="vseg-rest" style={{ flex: 1 - escFrac }} />
+                <div className="vseg-esc" style={{ flex: escFrac }} />
+              </div>
+              <span className="vx">{d.date.slice(8, 10)}/{d.date.slice(5, 7)}</span>
+            </div>
+          );
+        })}
+        {tip && (
+          <div className="vtip on" style={{ left: tip.x, top: tip.y - 10 }}>
+            <b>{tip.date.slice(8, 10)}/{tip.date.slice(5, 7)}</b> · <span className="tn">{tip.cham}</span> chamaram · <span className="tn">{tip.esc}</span> escalados ({tip.cham ? Math.round((tip.esc / tip.cham) * 100) : 0}%)
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 /* ---------------- Atendimentos (contatos + conversas) ---------------- */
 function Thread({ msgs }: { msgs: Conversa[] }) {
   let lastDay = "";
@@ -247,13 +335,18 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Principais Dúvidas</div><div className="cap">motivo do contato gravado pelo Max · <span className="chip">motivo_do_contato</span></div></div><div className="right"><div className="rlab">tópicos</div><div className="rnum">{m.topicos.length}</div></div></div>
-        <Bars data={m.topicos} />
+        <div className="card-head"><div><div className="title">Principais Dúvidas</div><div className="cap">clique numa dúvida pra ver os contatos · <span className="chip">motivo_do_contato</span></div></div><div className="right"><div className="rlab">tópicos</div><div className="rnum">{m.topicos.length}</div></div></div>
+        {m.contatos.length ? <DuvidasDrill contatos={m.contatos} /> : <Bars data={m.topicos} />}
       </section>
 
       <section className="card">
         <div className="card-head"><div><div className="title">Representação por Região</div><div className="cap">candidatos por região · passe o mouse no mapa · <span className="chip">state → região</span></div></div><div className="right"><div className="rlab">com região</div><div className="rnum">{fmt(comRegiao)}</div></div></div>
         <BrazilMap regioes={m.regioes} />
+      </section>
+
+      <section className="card">
+        <div className="card-head"><div><div className="title">Volume por dia</div><div className="cap">quantos chamaram o Max e quantos foram escalados · <span className="chip">createdate</span></div></div><div className="right"><div className="rlab">escalados</div><div className="rnum">{fmt(m.escaladas)}</div></div></div>
+        <VolumePorDia contatos={m.contatos} />
       </section>
 
       <div className="grid2">
