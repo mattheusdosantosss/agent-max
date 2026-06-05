@@ -105,18 +105,27 @@ function parseExec(e: any): Conversa {
   };
 }
 
-// Lê as execuções recentes COM dados e extrai melhor-esforço pergunta/resposta.
-export async function getN8nConversas(limit = 25): Promise<Conversa[] | null> {
+// Lê as execuções recentes COM dados (paginando) e extrai pergunta/resposta + identificador.
+export async function getN8nConversas(max = 400): Promise<Conversa[] | null> {
   const c = cfg();
   if (!c) return null;
-  const url = new URL(`${c.base}/api/v1/executions`);
-  url.searchParams.set("workflowId", c.workflowId);
-  url.searchParams.set("limit", String(limit));
-  url.searchParams.set("includeData", "true");
-  const res = await fetch(url.toString(), {
-    headers: { "X-N8N-API-KEY": c.key, accept: "application/json" }, cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`n8n exec data ${res.status}`);
-  const data = await res.json();
-  return (data.data ?? []).map(parseExec);
+  const out: Conversa[] = [];
+  let cursor: string | undefined = undefined;
+  for (let i = 0; i < 6 && out.length < max; i++) {
+    const url = new URL(`${c.base}/api/v1/executions`);
+    url.searchParams.set("workflowId", c.workflowId);
+    url.searchParams.set("limit", "100");
+    url.searchParams.set("includeData", "true");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const res = await fetch(url.toString(), {
+      headers: { "X-N8N-API-KEY": c.key, accept: "application/json" }, cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`n8n exec data ${res.status}`);
+    const data = await res.json();
+    const batch = data.data ?? [];
+    for (const e of batch) out.push(parseExec(e));
+    cursor = data.nextCursor ?? undefined;
+    if (!cursor || batch.length === 0) break;
+  }
+  return out;
 }

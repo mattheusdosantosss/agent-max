@@ -155,44 +155,66 @@ function DuvidasDrill({ contatos }: { contatos: Contato[] }) {
   );
 }
 
-/* ---------------- Volume por dia (chamaram × escalados) ---------------- */
+/* ---------------- Volume por período (chamaram × escalados) ---------------- */
 function VolumePorDia({ contatos }: { contatos: Contato[] }) {
-  const [tip, setTip] = useState<{ x: number; y: number; date: string; cham: number; esc: number } | null>(null);
+  const [modo, setModo] = useState<"dia" | "semana" | "mes">("mes");
+  const [tip, setTip] = useState<{ x: number; y: number; label: string; cham: number; esc: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const dias = useMemo(() => {
-    const m = new Map<string, { cham: number; esc: number }>();
+
+  const periodos = useMemo(() => {
+    const m = new Map<string, { label: string; ord: string; cham: number; esc: number }>();
     for (const c of contatos) {
-      const dia = (c.criadoEm || "").slice(0, 10); if (!dia) continue;
-      if (!m.has(dia)) m.set(dia, { cham: 0, esc: 0 });
-      const o = m.get(dia)!; o.cham++; if (c.escalou) o.esc++;
+      const iso = c.criadoEm; if (!iso) continue;
+      const d = new Date(iso); if (isNaN(d.getTime())) continue;
+      let key: string, label: string;
+      if (modo === "dia") {
+        key = iso.slice(0, 10); label = `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+      } else if (modo === "mes") {
+        key = iso.slice(0, 7); const [y, mo] = key.split("-"); label = `${mo}/${y.slice(2)}`;
+      } else {
+        const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+        const dow = (tmp.getUTCDay() + 6) % 7; tmp.setUTCDate(tmp.getUTCDate() - dow);
+        key = tmp.toISOString().slice(0, 10); label = `${key.slice(8, 10)}/${key.slice(5, 7)}`;
+      }
+      if (!m.has(key)) m.set(key, { label, ord: key, cham: 0, esc: 0 });
+      const o = m.get(key)!; o.cham++; if (c.escalou) o.esc++;
     }
-    return [...m.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date));
-  }, [contatos]);
-  if (!dias.length) return <div className="empty">sem datas registradas ainda</div>;
-  const vmax = Math.max(...dias.map((d) => d.cham));
+    return [...m.values()].sort((a, b) => a.ord.localeCompare(b.ord));
+  }, [contatos, modo]);
+
+  if (!periodos.length) return <div className="empty">sem datas registradas ainda</div>;
+  const vmax = Math.max(...periodos.map((p) => p.cham));
+
   return (
     <>
-      <div className="vol-legend"><span><i className="i-cham" /> chamaram</span><span><i className="i-esc" /> escalados p/ humano</span></div>
+      <div className="vol-top">
+        <div className="vol-legend"><span><i className="i-cham" /> chamaram</span><span><i className="i-esc" /> escalados p/ humano</span></div>
+        <div className="seg">
+          {([["dia", "Dia"], ["semana", "Semana"], ["mes", "Mês"]] as const).map(([k, lbl]) => (
+            <button key={k} className={modo === k ? "on" : ""} onClick={() => setModo(k)}>{lbl}</button>
+          ))}
+        </div>
+      </div>
       <div className="vol" ref={boxRef}>
-        {dias.map((d) => {
-          const h = (d.cham / vmax) * 100;
-          const escFrac = d.cham ? d.esc / d.cham : 0;
+        {periodos.map((p) => {
+          const h = (p.cham / vmax) * 100;
+          const escFrac = p.cham ? p.esc / p.cham : 0;
           return (
-            <div className="vcol" key={d.date}
-              onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, date: d.date, cham: d.cham, esc: d.esc }); }}
+            <div className="vcol" key={p.ord}
+              onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, label: p.label, cham: p.cham, esc: p.esc }); }}
               onMouseLeave={() => setTip(null)}>
-              <span className="vtot">{d.cham}</span>
+              <span className="vtot">{p.cham}</span>
               <div className="vstack" style={{ height: `${h}%` }}>
                 <div className="vseg-rest" style={{ flex: 1 - escFrac }} />
                 <div className="vseg-esc" style={{ flex: escFrac }} />
               </div>
-              <span className="vx">{d.date.slice(8, 10)}/{d.date.slice(5, 7)}</span>
+              <span className="vx">{p.label}</span>
             </div>
           );
         })}
         {tip && (
           <div className="vtip on" style={{ left: tip.x, top: tip.y - 10 }}>
-            <b>{tip.date.slice(8, 10)}/{tip.date.slice(5, 7)}</b> · <span className="tn">{tip.cham}</span> chamaram · <span className="tn">{tip.esc}</span> escalados ({tip.cham ? Math.round((tip.esc / tip.cham) * 100) : 0}%)
+            <b>{tip.label}</b> · <span className="tn">{tip.cham}</span> chamaram · <span className="tn">{tip.esc}</span> escalados ({tip.cham ? Math.round((tip.esc / tip.cham) * 100) : 0}%)
           </div>
         )}
       </div>
@@ -270,7 +292,7 @@ function Atendimentos({ contatos, conversas, excluidosTeste }: { contatos: Conta
                 <div className="tags">{selC.uf !== "—" && <span className="tg uf">{selC.uf}</span>}<span className="tg">{selC.motivo}</span>{selC.escalou && <span className="tg esc">escalado</span>}</div>
               </div>
               {selMsgs.length ? <Thread msgs={selMsgs} /> : (
-                <div className="dempty"><div className="big">&#128172;</div>Nenhuma conversa vinculada a este contato ainda.<br /><span className="hint">O vínculo usa telefone/email da execução do n8n.</span></div>
+                <div className="dempty"><div className="big">&#128172;</div>Nenhuma conversa vinculada a este contato.<br /><span className="hint">O feed traz as execuções guardadas no n8n — contatos antigos podem não ter histórico retido.</span></div>
               )}
             </>
           )}

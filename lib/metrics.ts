@@ -44,7 +44,7 @@ export async function getMetrics(): Promise<Metrics> {
   let conversas: Conversa[] = [];
   if (fontes.n8n) {
     try { mensagens = await getN8nMensagens(); } catch (e) { console.error("n8n volume:", e); }
-    try { const cv = await getN8nConversas(25); if (cv) conversas = cv; } catch (e) { console.error("n8n conversas:", e); }
+    try { const cv = await getN8nConversas(400); if (cv) conversas = cv; } catch (e) { console.error("n8n conversas:", e); }
   }
 
   const taxaEscalacao = hub.conversasUnicas > 0 ? hub.escaladas / hub.conversasUnicas : null;

@@ -595,3 +595,17 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .vtip.on{opacity:1}
 .vtip b{color:var(--accent)}
 .vtip .tn{font-family:var(--font-mono),monospace;font-weight:700}
+
+/* ========================================================================
+   v6 — Volume: seletor Dia/Semana/Mês + rolagem horizontal
+   ======================================================================== */
+.vol-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.vol-top .vol-legend{margin-bottom:0}
+.seg{display:inline-flex;background:var(--panel-2);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px}
+.seg button{background:transparent;border:0;color:var(--muted);font:inherit;font-size:11.5px;padding:5px 11px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--accent);color:#1a1008;font-weight:700}
+.vol{overflow-x:auto;scrollbar-width:thin}
+.vol::-webkit-scrollbar{height:8px}
+.vol::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px}
+.vcol{min-width:34px}
