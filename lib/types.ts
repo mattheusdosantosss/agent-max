@@ -19,6 +19,8 @@ export type Conversa = {
   status: string;
   pergunta: string; // texto do usuário (best-effort)
   resposta: string; // texto do Max (best-effort)
+  telefone: string; // identificador do contato (best-effort) p/ vincular ao HubSpot
+  email: string;    // idem
   nodes: string[];  // debug: nós da execução (quando não extrai texto)
 };
 

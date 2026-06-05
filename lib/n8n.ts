@@ -52,6 +52,29 @@ function findByKeys(obj: any, keys: string[], depth = 0): string {
   return "";
 }
 
+// Coleta todas as strings do payload (p/ achar telefone/email por regex).
+function collectStrings(obj: any, out: string[], depth = 0) {
+  if (obj == null || depth > 8) return;
+  if (typeof obj === "string") { out.push(obj); return; }
+  if (Array.isArray(obj)) { for (const it of obj) collectStrings(it, out, depth + 1); return; }
+  if (typeof obj === "object") { for (const k of Object.keys(obj)) collectStrings(obj[k], out, depth + 1); }
+}
+function acharEmail(strs: string[]): string {
+  const re = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  for (const s of strs) { const m = s.match(re); if (m) return m[0].toLowerCase(); }
+  return "";
+}
+function acharTelefone(strs: string[]): string {
+  for (const s of strs) {
+    const cand = s.match(/\+?\d[\d\s().\-]{8,}\d/);
+    if (cand) {
+      const dg = cand[0].replace(/\D/g, "");
+      if (dg.length >= 10 && dg.length <= 13) return dg;
+    }
+  }
+  return "";
+}
+
 function parseExec(e: any): Conversa {
   const runData = e?.data?.resultData?.runData ?? {};
   const nodes = Object.keys(runData);
@@ -68,12 +91,16 @@ function parseExec(e: any): Conversa {
   for (const j of jsons) { if (!pergunta) pergunta = findByKeys(j, inKeys); }
   let resposta = "";
   for (let i = jsons.length - 1; i >= 0; i--) { if (!resposta) resposta = findByKeys(jsons[i], outKeys); }
+  const strs: string[] = [];
+  for (const j of jsons) collectStrings(j, strs);
   return {
     id: String(e?.id ?? ""),
     quando: e?.startedAt ?? e?.stoppedAt ?? "",
     status: e?.status ?? (e?.finished ? "success" : ""),
     pergunta: pergunta.slice(0, 600),
     resposta: resposta.slice(0, 600),
+    telefone: acharTelefone(strs),
+    email: acharEmail(strs),
     nodes,
   };
 }
