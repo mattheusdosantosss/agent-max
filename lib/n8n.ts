@@ -129,3 +129,44 @@ export async function getN8nConversas(max = 400): Promise<Conversa[] | null> {
   }
   return out;
 }
+
+// ============================================================
+// Custo real: soma os tokens reais (tokenUsageEstimate do n8n)
+// de cada execução do Max. Procura recursivamente qualquer bloco
+// com prompt/completion tokens (cobre tokenUsageEstimate, usage,
+// prompt_tokens/completion_tokens e input_tokens/output_tokens).
+// ============================================================
+export type N8nUsage = { prompt: number; completion: number; calls: number; execs: number };
+
+function walkUsage(obj: any, acc: N8nUsage, depth = 0) {
+  if (obj == null || depth > 10 || typeof obj !== "object") return;
+  if (Array.isArray(obj)) { for (const it of obj) walkUsage(it, acc, depth + 1); return; }
+  const pt = obj.promptTokens ?? obj.prompt_tokens ?? obj.input_tokens;
+  const ct = obj.completionTokens ?? obj.completion_tokens ?? obj.output_tokens;
+  if (typeof pt === "number" && typeof ct === "number") { acc.prompt += pt; acc.completion += ct; acc.calls++; }
+  for (const k of Object.keys(obj)) walkUsage(obj[k], acc, depth + 1);
+}
+
+export async function getN8nUsage(max = 200): Promise<N8nUsage | null> {
+  const c = cfg();
+  if (!c) return null;
+  const acc: N8nUsage = { prompt: 0, completion: 0, calls: 0, execs: 0 };
+  let cursor: string | undefined = undefined;
+  for (let i = 0; i < 4 && acc.execs < max; i++) {
+    const url = new URL(`${c.base}/api/v1/executions`);
+    url.searchParams.set("workflowId", c.workflowId);
+    url.searchParams.set("limit", "100");
+    url.searchParams.set("includeData", "true");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const res = await fetch(url.toString(), {
+      headers: { "X-N8N-API-KEY": c.key, accept: "application/json" }, cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`n8n usage ${res.status}`);
+    const data = await res.json();
+    const batch = data.data ?? [];
+    for (const e of batch) { acc.execs++; walkUsage(e?.data?.resultData?.runData ?? {}, acc); }
+    cursor = data.nextCursor ?? undefined;
+    if (!cursor || batch.length === 0) break;
+  }
+  return acc;
+}

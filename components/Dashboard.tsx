@@ -323,7 +323,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Custo do LLM</div><div className="cap">estimativa a partir do volume × preço por token</div></div><div className="right"><div className="rlab">acumulado</div><div className="rnum">{usd(m.custo.totalUSD)}</div></div></div>
+        <div className="card-head"><div><div className="title">Custo do LLM</div><div className="cap">tokens reais lidos do n8n × preço do modelo</div></div><div className="right"><div className="rlab">acumulado</div><div className="rnum">{usd(m.custo.totalUSD)}</div></div></div>
         <div className="costwrap">
           <div><div className="costbig">{usd(m.custo.totalUSD)}</div><div className="costsub">{m.custo.estimado ? "estimativa" : "real"} · modelo <b>{m.custo.modelo}</b></div></div>
           <div>
