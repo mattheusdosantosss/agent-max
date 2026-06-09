@@ -200,6 +200,65 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
   );
 }
 
+/* ---------------- Análise do Max (IA, sob demanda) ---------------- */
+function AnaliseMax() {
+  const [estado, setEstado] = useState<"idle" | "loading" | "done" | "erro">("idle");
+  const [analise, setAnalise] = useState<any>(null);
+  const [base, setBase] = useState<any>(null);
+  const [erro, setErro] = useState("");
+  async function gerar() {
+    setEstado("loading"); setErro("");
+    try {
+      const r = await fetch("/api/analise", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) { setErro(d.error || "Falha ao gerar análise."); setEstado("erro"); return; }
+      setAnalise(d.analise); setBase(d.base); setEstado("done");
+    } catch (e: any) { setErro(String(e?.message ?? e)); setEstado("erro"); }
+  }
+  const sevClass = (s: string) => (s === "alta" ? "bad" : "warn");
+  return (
+    <div className="an-panel">
+      <div className="an-head">
+        <div><div className="an-title">Análise do Max</div><div className="an-cap">diagnóstico de atuação + sugestões · gerado por IA, sob demanda</div></div>
+        <button className="an-btn" onClick={gerar} disabled={estado === "loading"}>
+          {estado === "loading" ? "Analisando…" : estado === "done" ? "↻ Refazer" : "✨ Gerar análise"}
+        </button>
+      </div>
+      {estado === "loading" && (
+        <div className="an-load">
+          <div className="an-skel" style={{ width: "62%" }} /><div className="an-skel" style={{ width: "92%" }} /><div className="an-skel" style={{ width: "78%" }} /><div className="an-skel" style={{ width: "70%" }} />
+          <div className="an-foot">Lendo métricas e conversas recentes do Max e analisando…</div>
+        </div>
+      )}
+      {estado === "erro" && <div className="an-erro">{erro}</div>}
+      {estado === "done" && analise && (
+        <div className="an-result">
+          <div className="an-score">
+            <div><div className="an-big">{typeof analise.nota === "number" ? analise.nota.toLocaleString("pt-BR") : "—"}</div><div className="an-label">nota geral</div></div>
+            <div><div className="an-verdict">{analise.verdict}</div><div className="an-sub">{analise.resumo}</div></div>
+          </div>
+          {Array.isArray(analise.fortes) && analise.fortes.length > 0 && (
+            <div className="an-sec"><h3><span className="an-dot good" /> Pontos fortes</h3>
+              {analise.fortes.map((it: any, i: number) => (<div className="an-item good" key={i}><b>{it.titulo}</b> {it.detalhe}{it.evidencia && <span className="an-ev">{it.evidencia}</span>}</div>))}
+            </div>
+          )}
+          {Array.isArray(analise.problemas) && analise.problemas.length > 0 && (
+            <div className="an-sec"><h3><span className="an-dot bad" /> Problemas encontrados</h3>
+              {analise.problemas.map((it: any, i: number) => (<div className={`an-item ${sevClass(it.severidade)}`} key={i}><b>{it.titulo}</b> {it.detalhe}{it.evidencia && <span className="an-ev">{it.evidencia}</span>}</div>))}
+            </div>
+          )}
+          {Array.isArray(analise.sugestoes) && analise.sugestoes.length > 0 && (
+            <div className="an-sec"><h3><span className="an-dot tip" /> Sugestões de melhoria</h3>
+              {analise.sugestoes.map((it: any, i: number) => (<div className="an-item tip" key={i}><b>{it.titulo}</b> {it.detalhe}</div>))}
+            </div>
+          )}
+          {base && <div className="an-foot">Baseado em {base.conversas} contatos, {base.escaladas} escalações e amostra de {base.amostra} conversas recentes · modelo {base.modelo}. Conversas antigas não entram (retenção do n8n). Gerado por IA — revise antes de agir.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Atendimentos (contatos + perfil) ---------------- */
 function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; excluidosTeste: number }) {
   const [sel, setSel] = useState(0);
@@ -319,6 +378,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
 
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
+        <AnaliseMax />
         <Atendimentos contatos={m.contatos} excluidosTeste={m.excluidosTeste} />
       </section>
 
