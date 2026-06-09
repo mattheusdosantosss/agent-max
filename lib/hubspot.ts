@@ -17,7 +17,12 @@ async function buscarInteracoes(): Promise<HsContact[]> {
   let after: string | undefined = undefined;
   for (let i = 0; i < 50; i++) {
     const body: any = {
-      filterGroups: [{ filters: [{ propertyName: "motivo_do_contato", operator: "HAS_PROPERTY" }] }],
+      filterGroups: [{ filters: [
+        { propertyName: "motivo_do_contato", operator: "HAS_PROPERTY" },
+        // Exclui contatos do The Best School (Maria): eles carregam a marca do checkout.
+        // Resolve a mistura no CRM compartilhado (Max e Maria gravam motivo_do_contato).
+        { propertyName: "tbschool__status_do_checkout", operator: "NOT_HAS_PROPERTY" },
+      ] }],
       properties: [
         "motivo_do_contato", "motivo_da_escalacao", "atendimento_humano", "data_de_escalacao",
         "firstname", "lastname", "email", "phone", "state", "createdate",

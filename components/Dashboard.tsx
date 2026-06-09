@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, Fragment } from "react";
-import type { Metrics, TopicCount, DayCount, RegiaoCount, Contato, Conversa } from "@/lib/types";
+import { useMemo, useRef, useState } from "react";
+import type { Metrics, TopicCount, DayCount, RegiaoCount, Contato } from "@/lib/types";
 import { BR_W, BR_H, BR_STATES, BR_REGION_CENTROIDS, UF_TO_REGION, REGION_ORDER } from "@/lib/brazilMap";
 
 function fmt(n: number | null | undefined) { if (n == null) return "—"; return n.toLocaleString("pt-BR"); }
@@ -14,26 +14,9 @@ function usd(n: number | null, casas = 2) {
 function dataCurta(iso: string) {
   if (!iso) return "—";
   const d = new Date(iso); if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-function horaDe(iso: string) {
-  if (!iso) return "";
-  const d = new Date(iso); if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
-}
-function diaDe(iso: string) {
-  if (!iso) return "";
-  const d = new Date(iso); if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
+  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 function iniciais(s: string) { return s.split(" ").filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase() || "?"; }
-function soDigitos(s: string) { return (s || "").replace(/\D/g, ""); }
-function casa(ct: Contato, cv: Conversa): boolean {
-  if (cv.email && ct.email && cv.email.toLowerCase() === ct.email.toLowerCase()) return true;
-  const a = soDigitos(ct.telefone), b = soDigitos(cv.telefone);
-  if (a.length >= 8 && b.length >= 8 && a.slice(-8) === b.slice(-8)) return true;
-  return false;
-}
 
 function Bars({ data }: { data: TopicCount[] }) {
   if (!data.length) return <div className="empty">sem dados ainda</div>;
@@ -125,13 +108,13 @@ function DuvidasDrill({ contatos }: { contatos: Contato[] }) {
   if (!grupos.length) return <div className="empty">sem dados ainda</div>;
   const max = Math.max(...grupos.map((g) => g.value));
   const total = grupos.reduce((s, g) => s + g.value, 0);
-  const i = Math.min(sel, grupos.length - 1);
-  const selG = grupos[i];
+  const cur = Math.min(sel, grupos.length - 1);
+  const selG = grupos[cur];
   return (
     <div className="duv">
       <div className="bars">
         {grupos.map((g, idx) => (
-          <div className={`bar-row click ${idx === i ? "sel" : ""}`} key={g.label} onClick={() => setSel(idx)}>
+          <div className={`bar-row click ${idx === cur ? "sel" : ""}`} key={g.label} onClick={() => setSel(idx)}>
             <div className="bl">{g.label}</div>
             <div className="bar-track"><div className="bar-fill" style={{ width: `${(g.value / max) * 100}%` }} /></div>
             <div className="bv">{g.value}</div>
@@ -160,18 +143,15 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
   const [modo, setModo] = useState<"dia" | "semana" | "mes">("mes");
   const [tip, setTip] = useState<{ x: number; y: number; label: string; cham: number; esc: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-
   const periodos = useMemo(() => {
     const m = new Map<string, { label: string; ord: string; cham: number; esc: number }>();
     for (const c of contatos) {
       const iso = c.criadoEm; if (!iso) continue;
       const d = new Date(iso); if (isNaN(d.getTime())) continue;
       let key: string, label: string;
-      if (modo === "dia") {
-        key = iso.slice(0, 10); label = `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
-      } else if (modo === "mes") {
-        key = iso.slice(0, 7); const [y, mo] = key.split("-"); label = `${mo}/${y.slice(2)}`;
-      } else {
+      if (modo === "dia") { key = iso.slice(0, 10); label = `${iso.slice(8, 10)}/${iso.slice(5, 7)}`; }
+      else if (modo === "mes") { key = iso.slice(0, 7); const [y, mo] = key.split("-"); label = `${mo}/${y.slice(2)}`; }
+      else {
         const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
         const dow = (tmp.getUTCDay() + 6) % 7; tmp.setUTCDate(tmp.getUTCDate() - dow);
         key = tmp.toISOString().slice(0, 10); label = `${key.slice(8, 10)}/${key.slice(5, 7)}`;
@@ -181,10 +161,8 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
     }
     return [...m.values()].sort((a, b) => a.ord.localeCompare(b.ord));
   }, [contatos, modo]);
-
   if (!periodos.length) return <div className="empty">sem datas registradas ainda</div>;
   const vmax = Math.max(...periodos.map((p) => p.cham));
-
   return (
     <>
       <div className="vol-top">
@@ -222,101 +200,58 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
   );
 }
 
-/* ---------------- Atendimentos (contatos + conversas) ---------------- */
-function Thread({ msgs }: { msgs: Conversa[] }) {
-  let lastDay = "";
-  const out: JSX.Element[] = [];
-  msgs.forEach((cv, idx) => {
-    const dia = diaDe(cv.quando);
-    if (dia && dia !== lastDay) { lastDay = dia; out.push(<div className="daystamp" key={`d${idx}`}>{dia}</div>); }
-    if (cv.pergunta) out.push(<div className="bub u" key={`u${idx}`}>{cv.pergunta}<span className="t">{horaDe(cv.quando)}</span></div>);
-    if (cv.resposta) out.push(<div className="bub b" key={`b${idx}`}>{cv.resposta}<span className="t">{horaDe(cv.quando)}</span></div>);
-  });
-  return <div className="thread">{out}</div>;
-}
-
-function Atendimentos({ contatos, conversas, excluidosTeste }: { contatos: Contato[]; conversas: Conversa[]; excluidosTeste: number }) {
+/* ---------------- Atendimentos (contatos + perfil) ---------------- */
+function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; excluidosTeste: number }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
-
-  const msgsPorContato = useMemo(() =>
-    contatos.map((ct) => conversas.filter((cv) => casa(ct, cv)).sort((a, b) => (a.quando || "").localeCompare(b.quando || ""))),
-    [contatos, conversas]);
-  const naoVinculadas = useMemo(() => conversas.filter((cv) => !contatos.some((ct) => casa(ct, cv))), [contatos, conversas]);
-  const totalMsgs = useMemo(() => msgsPorContato.reduce((s, a) => s + a.length, 0), [msgsPorContato]);
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
   const ufsN = useMemo(() => new Set(contatos.map((c) => c.uf).filter((u) => u !== "—")).size, [contatos]);
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     return contatos.map((c, i) => ({ c, i })).filter(({ c }) => !t || `${c.nome} ${c.email} ${c.telefone} ${c.uf}`.toLowerCase().includes(t));
   }, [contatos, q]);
-
   if (!contatos.length) return <div className="empty">sem contatos ainda — ligue o HubSpot</div>;
-
-  const selC = contatos[sel];
-  const selMsgs = msgsPorContato[sel] || [];
-
+  const cur = Math.min(sel, contatos.length - 1);
+  const selC = contatos[cur];
+  const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
   return (
     <>
       <div className="summ">
         <div className="scard"><div className="v">{contatos.length}</div><div className="l">contatos</div></div>
         <div className="scard accent"><div className="v">{escaladosN}</div><div className="l">escalados</div></div>
-        <div className="scard"><div className="v">{totalMsgs}</div><div className="l">msgs vinculadas</div></div>
         <div className="scard"><div className="v">{ufsN}</div><div className="l">UFs</div></div>
+        <div className="scard"><div className="v">{excluidosTeste}</div><div className="l">de teste fora</div></div>
       </div>
       <div className="split">
         <div className="master">
           <div className="msearch"><input placeholder="buscar contato…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="mlist">
-            {filtrados.map(({ c, i }) => {
-              const ms = msgsPorContato[i]; const last = ms[ms.length - 1];
-              const preview = last ? (last.pergunta ? last.pergunta : "Max: " + last.resposta) : c.motivo;
-              return (
-                <div className={`crow ${i === sel ? "sel" : ""}`} key={c.id || c.email || i} onClick={() => setSel(i)}>
-                  <div className="av">{iniciais(c.nome)}</div>
-                  <div className="txt"><div className="nm">{c.nome}</div><div className="pv">{preview || "—"}</div></div>
-                  <div className="meta"><span className="tm">{last ? horaDe(last.quando) : ""}</span><span className={`escdot ${c.escalou ? "on" : ""}`} /></div>
-                </div>
-              );
-            })}
+            {filtrados.map(({ c, i }) => (
+              <div className={`crow ${i === cur ? "sel" : ""}`} key={c.id || c.email || i} onClick={() => setSel(i)}>
+                <div className="av">{iniciais(c.nome)}</div>
+                <div className="txt"><div className="nm">{c.nome}</div><div className="pv">{c.motivo}</div></div>
+                <div className="meta"><span className={`escdot ${c.escalou ? "on" : ""}`} title={c.escalou ? "escalado" : ""} /></div>
+              </div>
+            ))}
           </div>
         </div>
         <div className="detail">
-          {!selC ? (
-            <div className="dempty"><div className="big">&#128172;</div>Selecione um contato pra ver a conversa</div>
-          ) : (
-            <>
-              <div className="dhead">
-                <div className="av">{iniciais(selC.nome)}</div>
-                <div><div className="hn">{selC.nome}</div><div className="hm">{[selC.telefone, selC.email].filter(Boolean).join(" · ") || "—"}</div></div>
-                <div className="tags">{selC.uf !== "—" && <span className="tg uf">{selC.uf}</span>}<span className="tg">{selC.motivo}</span>{selC.escalou && <span className="tg esc">escalado</span>}</div>
-              </div>
-              {selMsgs.length ? <Thread msgs={selMsgs} /> : (
-                <div className="dempty"><div className="big">&#128172;</div>Nenhuma conversa vinculada a este contato.<br /><span className="hint">O feed traz as execuções guardadas no n8n — contatos antigos podem não ter histórico retido.</span></div>
-              )}
-            </>
-          )}
+          <div className="dhead">
+            <div className="av">{iniciais(selC.nome)}</div>
+            <div><div className="hn">{selC.nome}</div><div className="hm">{[selC.telefone, selC.email].filter(Boolean).join(" · ") || "—"}</div></div>
+            <div className="tags">{selC.uf !== "—" && <span className="tg uf">{selC.uf}</span>}{selC.escalou && <span className="tg esc">escalado</span>}</div>
+          </div>
+          <div className="pgrid">
+            <div className="pf"><div className="pl">Motivo do contato</div><div className="pv2">{selC.motivo}</div></div>
+            <div className="pf"><div className="pl">Atendimento humano</div><div className="pv2">{selC.escalou ? "sim — escalado" : "não — resolvido pelo bot"}</div></div>
+            <div className="pf"><div className="pl">UF</div><div className="pv2">{selC.uf}</div></div>
+            <div className="pf"><div className="pl">Região</div><div className="pv2">{regiao}</div></div>
+            <div className="pf"><div className="pl">Telefone</div><div className="pv2">{selC.telefone || "—"}</div></div>
+            <div className="pf"><div className="pl">Email</div><div className="pv2 ellip">{selC.email || "—"}</div></div>
+            <div className="pf wide"><div className="pl">Primeiro contato</div><div className="pv2">{dataCurta(selC.criadoEm)}</div></div>
+          </div>
         </div>
       </div>
-      {naoVinculadas.length > 0 && (
-        <details className="unlinked">
-          <summary>{naoVinculadas.length} conversa(s) do n8n ainda sem vínculo a um contato</summary>
-          <div className="tablewrap"><div className="tscroll">
-            <table className="tbl convtbl"><colgroup><col className="c1" /><col className="c2" /><col className="c3" /></colgroup>
-              <thead><tr><th>Conversa</th><th>Status</th><th>Quando</th></tr></thead>
-              <tbody>
-                {naoVinculadas.map((cv) => (
-                  <tr className="row" key={cv.id}>
-                    <td><div className="who"><div className="av chat">&#128172;</div><div className="txt"><div className="cname">{cv.pergunta || "—"}</div><div className="cmeta">Max: {cv.resposta || "—"}</div></div></div></td>
-                    <td><span className={`stat ${cv.status === "success" ? "ok" : cv.status === "error" ? "err" : ""}`}>{cv.status || "?"}</span></td>
-                    <td className="cwhen">{dataCurta(cv.quando)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div></div>
-        </details>
-      )}
     </>
   );
 }
@@ -383,8 +318,8 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </div>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos e conversas num lugar só · clique pra abrir o histórico</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
-        <Atendimentos contatos={m.contatos} conversas={m.conversas} excluidosTeste={m.excluidosTeste} />
+        <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
+        <Atendimentos contatos={m.contatos} excluidosTeste={m.excluidosTeste} />
       </section>
 
       <section className="card">

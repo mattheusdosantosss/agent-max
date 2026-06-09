@@ -1,7 +1,7 @@
 import type { Metrics, Conversa } from "./types";
 import { SEED } from "./seed";
 import { getHubspotMetrics } from "./hubspot";
-import { getN8nMensagens, getN8nConversas } from "./n8n";
+import { getN8nMensagens } from "./n8n";
 import { precoDoModelo } from "./pricing";
 
 function estimarCusto(mensagens: number | null) {
@@ -41,10 +41,9 @@ export async function getMetrics(): Promise<Metrics> {
   }
 
   let mensagens: number | null = SEED.mensagens;
-  let conversas: Conversa[] = [];
+  const conversas: Conversa[] = []; // mensagens não são mais exibidas (n8n não retém histórico longo)
   if (fontes.n8n) {
     try { mensagens = await getN8nMensagens(); } catch (e) { console.error("n8n volume:", e); }
-    try { const cv = await getN8nConversas(400); if (cv) conversas = cv; } catch (e) { console.error("n8n conversas:", e); }
   }
 
   const taxaEscalacao = hub.conversasUnicas > 0 ? hub.escaladas / hub.conversasUnicas : null;
