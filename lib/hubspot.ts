@@ -17,15 +17,24 @@ async function buscarInteracoes(): Promise<HsContact[]> {
   let after: string | undefined = undefined;
   for (let i = 0; i < 50; i++) {
     const body: any = {
-      filterGroups: [{ filters: [
-        { propertyName: "motivo_do_contato", operator: "HAS_PROPERTY" },
-        // Exclui contatos do The Best School (Maria): eles carregam a marca do checkout.
-        // Resolve a mistura no CRM compartilhado (Max e Maria gravam motivo_do_contato).
-        { propertyName: "tbschool__status_do_checkout", operator: "NOT_HAS_PROPERTY" },
-      ] }],
+      // Migração para a propriedade `produto`:
+      //  Grupo 1 = já marcados como Max (produto = "The Best Speaker Brasil").
+      //  Grupo 2 = ainda sem `produto` E sem marca do The Best School (fallback atual).
+      // Conforme os fluxos populam `produto`, o grupo 1 cresce e o 2 some sozinho.
+      filterGroups: [
+        { filters: [
+          { propertyName: "motivo_do_contato", operator: "HAS_PROPERTY" },
+          { propertyName: "produto", operator: "EQ", value: "The Best Speaker Brasil" },
+        ] },
+        { filters: [
+          { propertyName: "motivo_do_contato", operator: "HAS_PROPERTY" },
+          { propertyName: "produto", operator: "NOT_HAS_PROPERTY" },
+          { propertyName: "tbschool__status_do_checkout", operator: "NOT_HAS_PROPERTY" },
+        ] },
+      ],
       properties: [
         "motivo_do_contato", "motivo_da_escalacao", "atendimento_humano", "data_de_escalacao",
-        "firstname", "lastname", "email", "phone", "state", "createdate",
+        "firstname", "lastname", "email", "phone", "state", "createdate", "produto",
       ],
       sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
       limit: 100,
