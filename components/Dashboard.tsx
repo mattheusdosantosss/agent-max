@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Metrics, TopicCount, DayCount, RegiaoCount, Contato } from "@/lib/types";
 import { BR_W, BR_H, BR_STATES, BR_REGION_CENTROIDS, UF_TO_REGION, REGION_ORDER } from "@/lib/brazilMap";
 
@@ -200,39 +200,83 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
   );
 }
 
-/* ---------------- Análise do Max (IA, sob demanda) ---------------- */
+/* ---------------- Análise do Max (IA, automática + persistida) ---------------- */
+const ANALISE_VALIDADE_MS = 12 * 60 * 60 * 1000; // 12h
+
+function relativo(ts: number | null) {
+  if (!ts) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return "agora";
+  const m = Math.floor(s / 60); if (m < 60) return `há ${m} min`;
+  const h = Math.floor(m / 60); if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24); return `há ${d}d`;
+}
+
 function AnaliseMax() {
-  const [estado, setEstado] = useState<"idle" | "loading" | "done" | "erro">("idle");
   const [analise, setAnalise] = useState<any>(null);
   const [base, setBase] = useState<any>(null);
+  const [quando, setQuando] = useState<number | null>(null);
+  const [gerando, setGerando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+
   async function gerar() {
-    setEstado("loading"); setErro("");
+    setGerando(true); setErro("");
     try {
       const r = await fetch("/api/analise", { method: "POST" });
       const d = await r.json();
-      if (!r.ok) { setErro(d.error || "Falha ao gerar análise."); setEstado("erro"); return; }
-      setAnalise(d.analise); setBase(d.base); setEstado("done");
-    } catch (e: any) { setErro(String(e?.message ?? e)); setEstado("erro"); }
+      if (!r.ok) { setErro(d.error || "Falha ao gerar análise."); return; }
+      setAnalise(d.analise); setBase(d.base); setQuando(d.ts ?? Date.now());
+    } catch (e: any) { setErro(String(e?.message ?? e)); }
+    finally { setGerando(false); }
   }
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      let ts: number | null = null;
+      try {
+        const r = await fetch("/api/analise");
+        const d = await r.json();
+        if (vivo && d.analise) { setAnalise(d.analise); setBase(d.base); setQuando(d.ts); ts = d.ts; }
+      } catch { /* ignore */ }
+      if (vivo) setCarregando(false);
+      const vencida = !ts || Date.now() - ts > ANALISE_VALIDADE_MS;
+      if (vivo && vencida) gerar();
+    })();
+    return () => { vivo = false; };
+  }, []);
+
   const sevClass = (s: string) => (s === "alta" ? "bad" : "warn");
+  const semAnalise = !analise;
+
   return (
     <div className="an-panel">
       <div className="an-head">
-        <div><div className="an-title">Análise do Max</div><div className="an-cap">diagnóstico de atuação + sugestões · gerado por IA, sob demanda</div></div>
-        <button className="an-btn" onClick={gerar} disabled={estado === "loading"}>
-          {estado === "loading" ? "Analisando…" : estado === "done" ? "↻ Refazer" : "✨ Gerar análise"}
-        </button>
+        <div>
+          <div className="an-title">Análise do Max</div>
+          <div className="an-cap">
+            diagnóstico por IA · atualiza sozinho
+            {analise && !gerando && <> · última {relativo(quando)}</>}
+            {gerando && <> · <span className="an-live">atualizando…</span></>}
+          </div>
+        </div>
+        {analise && !gerando && (
+          <button className="an-link" onClick={gerar} title="Gerar agora">↻ atualizar</button>
+        )}
       </div>
-      {estado === "loading" && (
+
+      {(carregando || (gerando && semAnalise)) && (
         <div className="an-load">
           <div className="an-skel" style={{ width: "62%" }} /><div className="an-skel" style={{ width: "92%" }} /><div className="an-skel" style={{ width: "78%" }} /><div className="an-skel" style={{ width: "70%" }} />
-          <div className="an-foot">Lendo métricas e conversas recentes do Max e analisando…</div>
+          <div className="an-foot">{gerando ? "Lendo conversas e métricas e analisando…" : "Carregando última análise…"}</div>
         </div>
       )}
-      {estado === "erro" && <div className="an-erro">{erro}</div>}
-      {estado === "done" && analise && (
-        <div className="an-result">
+
+      {erro && semAnalise && <div className="an-erro">{erro}</div>}
+
+      {analise && (
+        <div className="an-result" style={gerando ? { opacity: 0.55 } : undefined}>
           <div className="an-score">
             <div><div className="an-big">{typeof analise.nota === "number" ? analise.nota.toLocaleString("pt-BR") : "—"}</div><div className="an-label">nota geral</div></div>
             <div><div className="an-verdict">{analise.verdict}</div><div className="an-sub">{analise.resumo}</div></div>
@@ -252,7 +296,7 @@ function AnaliseMax() {
               {analise.sugestoes.map((it: any, i: number) => (<div className="an-item tip" key={i}><b>{it.titulo}</b> {it.detalhe}</div>))}
             </div>
           )}
-          {base && <div className="an-foot">Baseado em {base.conversas} contatos, {base.escaladas} escalações e amostra de {base.amostra} conversas recentes · modelo {base.modelo}. Conversas antigas não entram (retenção do n8n). Gerado por IA — revise antes de agir.</div>}
+          {base && <div className="an-foot">Baseado em {base.conversas} contatos, {base.escaladas} escalações e {base.amostra} conversas{base.corpus ? ` (corpus de ${base.corpus} guardadas)` : ""} · fonte: {base.fonte} · modelo {base.modelo}. Gerado por IA — revise antes de agir.</div>}
         </div>
       )}
     </div>
