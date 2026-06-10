@@ -21,6 +21,8 @@ export type ConversaStore = {
   whatsapp?: string;
   nome?: string;
   motivo?: string;
+  promptTokens?: number;
+  completionTokens?: number;
 };
 
 // Prefixo de chaves: permite dividir o MESMO banco Upstash com outros projetos
@@ -30,6 +32,9 @@ const K_HASH = `${P}conv`;          // hash: id -> ConversaStore
 const K_INDEX = `${P}conv:ts`;      // sorted set: score=ts, member=id
 const K_ANALISES = `${P}analises`;  // list (LPUSH, mais recente no topo)
 const K_LATEST = `${P}analise:latest`;
+const K_TOK_P = `${P}tok:prompt`;
+const K_TOK_C = `${P}tok:completion`;
+const K_TOK_N = `${P}tok:n`;
 const MAX_CONV = 5000;
 
 function parse<T>(v: unknown): T | null {
@@ -40,11 +45,25 @@ function parse<T>(v: unknown): T | null {
 
 export async function salvarConversa(c: ConversaStore): Promise<boolean> {
   const r = redis(); if (!r) return false;
+  const novo = !(await r.hexists(K_HASH, c.id));
   await r.hset(K_HASH, { [c.id]: JSON.stringify(c) });
   await r.zadd(K_INDEX, { score: c.ts, member: c.id });
   // mantém só as MAX_CONV mais recentes
   await r.zremrangebyrank(K_INDEX, 0, -(MAX_CONV + 1));
+  // contadores de custo: só soma quando a conversa é nova (evita dobrar em reenvio)
+  if (novo && ((c.promptTokens ?? 0) > 0 || (c.completionTokens ?? 0) > 0)) {
+    await r.incrby(K_TOK_P, Math.round(c.promptTokens ?? 0));
+    await r.incrby(K_TOK_C, Math.round(c.completionTokens ?? 0));
+    await r.incr(K_TOK_N);
+  }
   return true;
+}
+
+export async function tokensAcumulados(): Promise<{ prompt: number; completion: number; n: number } | null> {
+  const r = redis(); if (!r) return null;
+  const vals = (await r.mget(K_TOK_P, K_TOK_C, K_TOK_N)) as (string | number | null)[];
+  const num = (v: unknown) => (v == null ? 0 : Number(v) || 0);
+  return { prompt: num(vals?.[0]), completion: num(vals?.[1]), n: num(vals?.[2]) };
 }
 
 export async function conversasRecentes(n = 50): Promise<ConversaStore[]> {

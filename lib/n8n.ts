@@ -25,6 +25,7 @@ export async function getN8nMensagens(): Promise<number | null> {
     if (cursor) url.searchParams.set("cursor", cursor);
     const res = await fetch(url.toString(), {
       headers: { "X-N8N-API-KEY": c.key, accept: "application/json" }, cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error(`n8n executions ${res.status}`);
     const data = await res.json();

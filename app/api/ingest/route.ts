@@ -21,6 +21,11 @@ export async function POST(req: Request) {
     body.nome ??
     (body.firstname ? `${body.firstname} ${body.lastname ?? ""}`.trim() : undefined);
 
+  const tu = body.tokenUsageEstimate ?? body.usage ?? {};
+  const num = (v: any) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : undefined; };
+  const promptTokens = num(body.promptTokens ?? tu.promptTokens ?? tu.prompt_tokens ?? tu.input_tokens);
+  const completionTokens = num(body.completionTokens ?? tu.completionTokens ?? tu.completion_tokens ?? tu.output_tokens);
+
   const c: ConversaStore = {
     id,
     ts: body.ts ? Number(body.ts) : Date.now(),
@@ -30,6 +35,8 @@ export async function POST(req: Request) {
     whatsapp: body.whatsapp ? String(body.whatsapp) : undefined,
     nome: nome ? String(nome) : undefined,
     motivo: body.motivo ? String(body.motivo) : undefined,
+    promptTokens,
+    completionTokens,
   };
 
   const ok = await salvarConversa(c);

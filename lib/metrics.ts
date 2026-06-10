@@ -1,15 +1,16 @@
 import type { Metrics, Conversa } from "./types";
 import { SEED } from "./seed";
 import { getHubspotMetrics } from "./hubspot";
-import { getN8nMensagens, getN8nUsage, type N8nUsage } from "./n8n";
+import { getN8nMensagens } from "./n8n";
 import { precoDoModelo } from "./pricing";
+import { tokensAcumulados } from "./store";
 
 // Fallback: estimativa por tokens médios fixos (quando não há leitura real do n8n).
 function custoEstimado(mensagens: number | null) {
   const modelo = process.env.LLM_MODEL ?? "—";
   const preco = precoDoModelo(modelo);
-  const tIn = Number(process.env.LLM_AVG_TOKENS_IN ?? 1200);
-  const tOut = Number(process.env.LLM_AVG_TOKENS_OUT ?? 350);
+  const tIn = Number(process.env.LLM_AVG_TOKENS_IN ?? 17700);
+  const tOut = Number(process.env.LLM_AVG_TOKENS_OUT ?? 90);
   if (mensagens == null || !preco) {
     return {
       modelo, totalUSD: null as number | null, porMensagemUSD: null as number | null, estimado: true,
@@ -25,21 +26,17 @@ function custoEstimado(mensagens: number | null) {
   };
 }
 
-// Custo real: usa os tokens reais lidos das execuções do n8n (tokenUsageEstimate).
-function custoReal(mensagens: number | null, usage: N8nUsage | null) {
+// Custo real: soma dos tokens reais que o n8n empurra junto de cada conversa (Redis).
+function custoRealTokens(tok: { prompt: number; completion: number; n: number } | null) {
   const modelo = process.env.LLM_MODEL ?? "gpt-4.1-mini";
   const preco = precoDoModelo(modelo);
-  if (!preco || !usage || usage.calls === 0 || usage.execs === 0) return null; // cai no fallback
-  const custoLido = (usage.prompt / 1e6) * preco.in + (usage.completion / 1e6) * preco.out;
-  const porMsg = custoLido / usage.execs;
-  const cobriuTudo = mensagens == null ? true : usage.execs >= mensagens;
-  const totalUSD = cobriuTudo ? custoLido : porMsg * (mensagens as number);
-  const n = (x: number) => Math.round(x).toLocaleString("pt-BR");
+  if (!preco || !tok || tok.n === 0) return null; // cai no fallback (estimativa)
+  const total = (tok.prompt / 1e6) * preco.in + (tok.completion / 1e6) * preco.out;
+  const porMsg = total / tok.n;
+  const f = (x: number) => Math.round(x).toLocaleString("pt-BR");
   return {
-    modelo, totalUSD, porMensagemUSD: porMsg, estimado: !cobriuTudo,
-    nota: cobriuTudo
-      ? `Custo a partir dos tokens reais de ${usage.execs} execuções (${n(usage.prompt)} prompt + ${n(usage.completion)} completion) ao preço do ${modelo}. Para o valor exato faturado, ver o painel da OpenAI.`
-      : `Custo médio real por execução (amostra de ${usage.execs} execuções, ${n(usage.prompt + usage.completion)} tokens) × ${mensagens} mensagens. O n8n retém só parte do histórico, por isso o total é extrapolado.`,
+    modelo, totalUSD: total, porMensagemUSD: porMsg, estimado: false,
+    nota: `Custo real dos tokens de ${tok.n} conversas capturadas (${f(tok.prompt)} prompt + ${f(tok.completion)} completion) ao preço do ${modelo}. Acumula conforme novas conversas chegam. Valor exato faturado: painel da OpenAI.`,
   };
 }
 
@@ -60,15 +57,16 @@ export async function getMetrics(): Promise<Metrics> {
   }
 
   let mensagens: number | null = SEED.mensagens;
-  let usage: N8nUsage | null = null;
-  const conversas: Conversa[] = []; // mensagens não são mais exibidas (n8n não retém histórico longo)
+  const conversas: Conversa[] = []; // mensagens não são exibidas (sem histórico longo no n8n)
   if (fontes.n8n) {
     try { mensagens = await getN8nMensagens(); } catch (e) { console.error("n8n volume:", e); }
-    try { usage = await getN8nUsage(200); } catch (e) { console.error("n8n usage:", e); }
   }
 
+  let tok: { prompt: number; completion: number; n: number } | null = null;
+  try { tok = await tokensAcumulados(); } catch (e) { console.error("tokens store:", e); }
+
   const taxaEscalacao = hub.conversasUnicas > 0 ? hub.escaladas / hub.conversasUnicas : null;
-  const custo = custoReal(mensagens, usage) ?? custoEstimado(mensagens);
+  const custo = custoRealTokens(tok) ?? custoEstimado(mensagens);
 
   return {
     mensagens,
