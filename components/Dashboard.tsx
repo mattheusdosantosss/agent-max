@@ -366,6 +366,16 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
   function toggleTheme() { const t = theme === "dark" ? "light" : "dark"; setTheme(t); document.documentElement.setAttribute("data-theme", t); }
   async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); } finally { setLoading(false); } }
 
+  // Aquece o cache no primeiro acesso: se o volume do n8n não veio (cache vazio),
+  // dispara a leitura ao vivo uma vez em segundo plano (sem o usuário clicar).
+  const aqueceu = useRef(false);
+  useEffect(() => {
+    if (aqueceu.current) return;
+    aqueceu.current = true;
+    if (initial.mensagens == null && initial.fontes.n8n) atualizar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const stamp = new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const comRegiao = m.regioes.filter((r) => r.uf !== "—").reduce((s, r) => s + r.value, 0);
 

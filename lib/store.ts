@@ -35,6 +35,7 @@ const K_LATEST = `${P}analise:latest`;
 const K_TOK_P = `${P}tok:prompt`;
 const K_TOK_C = `${P}tok:completion`;
 const K_TOK_N = `${P}tok:n`;
+const K_N8N_COUNT = `${P}n8n:count`; // último volume de execuções lido do n8n (cache)
 const MAX_CONV = 5000;
 
 function parse<T>(v: unknown): T | null {
@@ -82,6 +83,17 @@ export async function conversasRecentes(n = 50): Promise<ConversaStore[]> {
 export async function totalConversas(): Promise<number> {
   const r = redis(); if (!r) return 0;
   return (await r.zcard(K_INDEX)) ?? 0;
+}
+
+// Cache do volume de execuções do n8n: a contagem ao vivo é lenta (instância
+// self-hosted), então guardamos o último valor bom e a página lê daqui (instantâneo).
+export async function salvarN8nCount(n: number): Promise<void> {
+  const r = redis(); if (!r) return;
+  await r.set(K_N8N_COUNT, JSON.stringify({ n, at: Date.now() }));
+}
+export async function n8nCountCache(): Promise<{ n: number; at: number } | null> {
+  const r = redis(); if (!r) return null;
+  return parse<{ n: number; at: number }>(await r.get(K_N8N_COUNT));
 }
 
 export async function salvarAnalise(rec: any): Promise<boolean> {

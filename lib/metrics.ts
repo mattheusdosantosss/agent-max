@@ -3,7 +3,7 @@ import { SEED } from "./seed";
 import { getHubspotMetrics } from "./hubspot";
 import { getN8nMensagens } from "./n8n";
 import { precoDoModelo } from "./pricing";
-import { tokensAcumulados } from "./store";
+import { tokensAcumulados, totalConversas, n8nCountCache, salvarN8nCount } from "./store";
 
 // Fallback: estimativa por tokens médios fixos (quando não há leitura real do n8n).
 function custoEstimado(mensagens: number | null) {
@@ -40,7 +40,7 @@ function custoRealTokens(tok: { prompt: number; completion: number; n: number } 
   };
 }
 
-export async function getMetrics(): Promise<Metrics> {
+export async function getMetrics(opts: { liveN8n?: boolean } = {}): Promise<Metrics> {
   const fontes = {
     hubspot: !!process.env.HUBSPOT_TOKEN,
     n8n: !!(process.env.N8N_API_KEY && process.env.N8N_WORKFLOW_ID && process.env.N8N_BASE_URL),
@@ -56,26 +56,40 @@ export async function getMetrics(): Promise<Metrics> {
     catch (e) { console.error("HubSpot falhou, usando seed:", e); }
   }
 
-  let mensagens: number | null = SEED.mensagens;
+  // Volume de mensagens (execuções do n8n). A contagem ao vivo é LENTA (instância
+  // self-hosted), então só roda quando opts.liveN8n=true (rota /api/metrics, com budget
+  // maior). O render da página lê o último valor guardado no Redis = instantâneo, sem "—".
+  const conversas: Conversa[] = [];
   let n8nErro = "";
-  const conversas: Conversa[] = []; // mensagens não são exibidas (sem histórico longo no n8n)
-  if (fontes.n8n) {
-    try { mensagens = await getN8nMensagens(); }
-    catch (e: any) { n8nErro = String(e?.message ?? e); console.error("n8n volume:", e); }
+  let n8nN: number | null = null;
+  if (opts.liveN8n && fontes.n8n) {
+    try {
+      n8nN = await getN8nMensagens();
+      if (n8nN != null) await salvarN8nCount(n8nN); // grava o valor bom no cache
+    } catch (e: any) { n8nErro = String(e?.message ?? e); console.error("n8n volume:", e); }
   }
+  let cache: { n: number; at: number } | null = null;
+  try { cache = await n8nCountCache(); } catch (e) { console.error("n8n cache:", e); }
+  let redisConv = 0;
+  try { redisConv = await totalConversas(); } catch (e) { console.error("redis total:", e); }
+  // Prioridade: contagem ao vivo recém-lida > cache do Redis > nº de conversas capturadas.
+  const mensagens: number | null =
+    n8nN != null ? n8nN : (cache?.n ?? (redisConv > 0 ? redisConv : null));
 
   let tok: { prompt: number; completion: number; n: number } | null = null;
   try { tok = await tokensAcumulados(); } catch (e) { console.error("tokens store:", e); }
 
   const taxaEscalacao = hub.conversasUnicas > 0 ? hub.escaladas / hub.conversasUnicas : null;
   let custo = custoRealTokens(tok) ?? custoEstimado(mensagens);
-  // Sem volume do n8n E houve erro na chamada → mostra o motivo real no card de custo.
-  if (mensagens == null && n8nErro) {
+  // Se a leitura ao vivo falhou MAS temos cache, sinaliza que é valor guardado.
+  if (n8nErro && n8nN == null && mensagens != null) {
+    custo = { ...custo, nota: `${custo.nota} (volume do último valor lido do n8n; a leitura ao vivo agora falhou: ${n8nErro})` };
+  } else if (mensagens == null && (n8nErro || opts.liveN8n)) {
     const lento = /abort|timeout|timed out/i.test(n8nErro);
     const dica = lento
-      ? "n8n demorou demais pra responder (lentidão/instância fria). Não é a chave."
-      : "Provável N8N_API_KEY vencida/sem permissão na Public API — gere uma nova chave no n8n (sem validade) e atualize no Vercel.";
-    custo = { ...custo, nota: `n8n não respondeu à contagem de mensagens: ${n8nErro}. ${dica}` };
+      ? "n8n demorou demais pra responder mesmo com 20s. Instância muito lenta/fria — clique em Atualizar de novo p/ aquecer."
+      : (n8nErro ? "n8n recusou a Public API (status acima)." : "Clique em Atualizar p/ ler o volume do n8n e popular o cache.");
+    custo = { ...custo, nota: `Sem volume do n8n. ${dica}` };
   }
 
   return {

@@ -30,12 +30,12 @@ export async function getN8nMensagens(): Promise<number | null> {
     try {
       res = await fetch(url.toString(), {
         headers: { "X-N8N-API-KEY": c.key, accept: "application/json" }, cache: "no-store",
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(20000),
       });
     } catch (e: any) {
       if (total > 0) return total; // já contei algo: vale mais que "—"
       const lento = e?.name === "TimeoutError" || /abort/i.test(String(e?.message));
-      throw new Error(lento ? "timeout 6s (instância n8n lenta p/ responder)" : String(e?.message ?? e));
+      throw new Error(lento ? "timeout 20s (n8n não respondeu a tempo)" : String(e?.message ?? e));
     }
     if (!res.ok) {
       if (total > 0) return total;
