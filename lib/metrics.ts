@@ -57,16 +57,26 @@ export async function getMetrics(): Promise<Metrics> {
   }
 
   let mensagens: number | null = SEED.mensagens;
+  let n8nErro = "";
   const conversas: Conversa[] = []; // mensagens não são exibidas (sem histórico longo no n8n)
   if (fontes.n8n) {
-    try { mensagens = await getN8nMensagens(); } catch (e) { console.error("n8n volume:", e); }
+    try { mensagens = await getN8nMensagens(); }
+    catch (e: any) { n8nErro = String(e?.message ?? e); console.error("n8n volume:", e); }
   }
 
   let tok: { prompt: number; completion: number; n: number } | null = null;
   try { tok = await tokensAcumulados(); } catch (e) { console.error("tokens store:", e); }
 
   const taxaEscalacao = hub.conversasUnicas > 0 ? hub.escaladas / hub.conversasUnicas : null;
-  const custo = custoRealTokens(tok) ?? custoEstimado(mensagens);
+  let custo = custoRealTokens(tok) ?? custoEstimado(mensagens);
+  // Sem volume do n8n E houve erro na chamada → mostra o motivo real no card de custo.
+  if (mensagens == null && n8nErro) {
+    const lento = /abort|timeout|timed out/i.test(n8nErro);
+    const dica = lento
+      ? "n8n demorou demais pra responder (lentidão/instância fria). Não é a chave."
+      : "Provável N8N_API_KEY vencida/sem permissão na Public API — gere uma nova chave no n8n (sem validade) e atualize no Vercel.";
+    custo = { ...custo, nota: `n8n não respondeu à contagem de mensagens: ${n8nErro}. ${dica}` };
+  }
 
   return {
     mensagens,
