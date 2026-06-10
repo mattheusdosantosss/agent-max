@@ -46,9 +46,10 @@ function parse<T>(v: unknown): T | null {
 
 export async function salvarConversa(c: ConversaStore): Promise<boolean> {
   const r = redis(); if (!r) return false;
+  const score = Number.isFinite(c.ts) ? c.ts : Date.now(); // nunca null/NaN no zadd
   const novo = !(await r.hexists(K_HASH, c.id));
   await r.hset(K_HASH, { [c.id]: JSON.stringify(c) });
-  await r.zadd(K_INDEX, { score: c.ts, member: c.id });
+  await r.zadd(K_INDEX, { score, member: c.id });
   // mantém só as MAX_CONV mais recentes
   await r.zremrangebyrank(K_INDEX, 0, -(MAX_CONV + 1));
   // contadores de custo: só soma quando a conversa é nova (evita dobrar em reenvio)

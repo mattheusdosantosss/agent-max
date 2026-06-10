@@ -16,6 +16,14 @@ export async function POST(req: Request) {
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "json inválido" }, { status: 400 }); }
 
+  // Blindagem: o n8n às vezes manda os valores com "=" colado na frente (sobra do
+  // modo expressão). Limpamos pra não corromper id/ts/score.
+  if (body && typeof body === "object") {
+    for (const k of Object.keys(body)) {
+      if (typeof body[k] === "string" && body[k].startsWith("=")) body[k] = body[k].slice(1);
+    }
+  }
+
   try {
     const id = String(body.id ?? body.executionId ?? body.contactId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const nome =
@@ -27,9 +35,10 @@ export async function POST(req: Request) {
     const promptTokens = num(body.promptTokens ?? tu.promptTokens ?? tu.prompt_tokens ?? tu.input_tokens);
     const completionTokens = num(body.completionTokens ?? tu.completionTokens ?? tu.completion_tokens ?? tu.output_tokens);
 
+    const tsNum = Number(body.ts);
     const c: ConversaStore = {
       id,
-      ts: body.ts ? Number(body.ts) : Date.now(),
+      ts: Number.isFinite(tsNum) ? tsNum : Date.now(),
       pergunta: String(body.pergunta ?? body.msgcli ?? body.mensagem ?? "").slice(0, 2000),
       resposta: String(body.resposta ?? body.output ?? body.resposta_max ?? "").slice(0, 2000),
       contactId: body.contactId ? String(body.contactId) : undefined,
