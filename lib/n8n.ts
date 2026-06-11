@@ -1,5 +1,6 @@
 // n8n Public API. Header de auth: X-N8N-API-KEY.
 import type { Conversa } from "./types";
+import type { ConversaStore } from "./store";
 
 function cfg() {
   const base = process.env.N8N_BASE_URL;
@@ -142,4 +143,96 @@ export async function getN8nConversas(max = 400): Promise<Conversa[] | null> {
     if (!cursor || batch.length === 0) break;
   }
   return out;
+}
+
+// ============================================================================
+// BACKFILL — lê execuções do Max no n8n e converte em ConversaStore (pergunta +
+// resposta + contactId/whatsapp/nome) pra gravar no Redis e vincular ao contato.
+// ============================================================================
+
+// Pega o json do primeiro item de saída de um nó específico da execução.
+function nodeJson(runData: any, nodeName: string): any | null {
+  try {
+    const items = runData?.[nodeName]?.[0]?.data?.main?.[0] ?? [];
+    return items?.[0]?.json ?? null;
+  } catch { return null; }
+}
+
+// Converte uma execução crua do n8n em ConversaStore (ou null se não houver nada útil).
+export function parseExecParaStore(e: any): ConversaStore | null {
+  const runData = e?.data?.resultData?.runData ?? {};
+  const id = String(e?.id ?? "");
+  if (!id) return null;
+  const ts = Date.parse(e?.startedAt ?? e?.stoppedAt ?? "") || Date.now();
+
+  // pergunta — nó WebHookMultiMessage (body[].body.msgcli)
+  let pergunta = "";
+  const wh = nodeJson(runData, "WebHookMultiMessage");
+  if (wh?.body && Array.isArray(wh.body)) {
+    pergunta = wh.body.map((m: any) => m?.body?.msgcli || "").filter(Boolean).join(" ").trim();
+  }
+
+  // resposta — nó Respond to Webhook (message)
+  let resposta = "";
+  const rw = nodeJson(runData, "Respond to Webhook");
+  if (rw && typeof rw.message === "string") resposta = rw.message;
+
+  // contactId / nome / whatsapp — nó HTTP Request2 (search HubSpot → results[0])
+  let contactId = "", nome = "", whatsapp = "";
+  const hr = nodeJson(runData, "HTTP Request2");
+  const r0 = hr?.results?.[0];
+  if (r0) {
+    contactId = String(r0.id ?? "");
+    nome = String(r0?.properties?.firstname ?? "");
+    whatsapp = String(r0?.properties?.hs_whatsapp_phone_number ?? "");
+  }
+
+  // Fallbacks heurísticos (execuções antigas com nós de nome diferente).
+  if (!pergunta || !resposta || !whatsapp) {
+    const jsons: any[] = [];
+    for (const n of Object.keys(runData)) {
+      const main = runData[n]?.[0]?.data?.main?.[0] ?? [];
+      for (const item of main) if (item?.json) jsons.push(item.json);
+    }
+    if (!pergunta) for (const j of jsons) { if (!pergunta) pergunta = findByKeys(j, ["msgcli", "chatinput", "message", "text", "pergunta", "content"]); }
+    if (!resposta) for (let i = jsons.length - 1; i >= 0; i--) { if (!resposta) resposta = findByKeys(jsons[i], ["output", "message", "resposta", "response", "answer", "reply"]); }
+    if (!whatsapp) { const strs: string[] = []; for (const j of jsons) collectStrings(j, strs); whatsapp = acharTelefone(strs); }
+  }
+
+  if (!pergunta && !resposta) return null; // sem conteúdo: descarta
+  return {
+    id,
+    ts,
+    pergunta: pergunta.slice(0, 2000),
+    resposta: resposta.slice(0, 2000),
+    contactId: contactId || undefined,
+    whatsapp: whatsapp || undefined,
+    nome: nome || undefined,
+  };
+}
+
+// Busca UMA página de execuções (com dados) de um workflow. Timeout pra não travar.
+export async function fetchExecPage(
+  workflowId: string,
+  cursor?: string,
+  limit = 25
+): Promise<{ execs: any[]; nextCursor?: string }> {
+  const base = process.env.N8N_BASE_URL;
+  const key = process.env.N8N_API_KEY;
+  if (!base || !key) throw new Error("N8N_BASE_URL ou N8N_API_KEY ausente no Vercel");
+  let b = base.trim().replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(b)) b = "https://" + b;
+  const url = new URL(`${b}/api/v1/executions`);
+  url.searchParams.set("workflowId", workflowId);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("includeData", "true");
+  if (cursor) url.searchParams.set("cursor", cursor);
+  const res = await fetch(url.toString(), {
+    headers: { "X-N8N-API-KEY": key, accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`n8n executions HTTP ${res.status}`);
+  const data = await res.json();
+  return { execs: data.data ?? [], nextCursor: data.nextCursor ?? undefined };
 }
