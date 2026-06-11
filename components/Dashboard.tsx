@@ -303,8 +303,11 @@ function AnaliseMax() {
   );
 }
 
-/* ---------------- Atendimentos (contatos + perfil) ---------------- */
-function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; excluidosTeste: number }) {
+/* ---------------- Atendimentos (contatos + perfil + conversa) ---------------- */
+type ConvUI = { id: string; ts: number; pergunta: string; resposta: string; contactId: string; whatsapp: string; nome: string; motivo: string };
+function digitsTail(s: string) { return (s || "").replace(/\D/g, "").slice(-8); }
+
+function Atendimentos({ contatos, excluidosTeste, conversas }: { contatos: Contato[]; excluidosTeste: number; conversas: ConvUI[] }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
@@ -317,6 +320,14 @@ function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; exclu
   const cur = Math.min(sel, contatos.length - 1);
   const selC = contatos[cur];
   const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
+  const thread = useMemo(() => {
+    const cid = selC.id;
+    const tail = digitsTail(selC.telefone);
+    return conversas
+      .filter((cv) => (cid && cv.contactId === cid) || (tail && cv.whatsapp && digitsTail(cv.whatsapp) === tail))
+      .sort((a, b) => a.ts - b.ts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversas, selC.id, selC.telefone]);
   return (
     <>
       <div className="summ">
@@ -353,6 +364,26 @@ function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; exclu
             <div className="pf"><div className="pl">Email</div><div className="pv2 ellip">{selC.email || "—"}</div></div>
             <div className="pf wide"><div className="pl">Primeiro contato</div><div className="pv2">{dataCurta(selC.criadoEm)}</div></div>
           </div>
+          <div className="conv">
+            <div className="conv-h">Conversa{thread.length ? <span className="conv-n">{thread.length} troca(s)</span> : null}</div>
+            {thread.length ? (
+              <div className="thread">
+                {thread.map((cv) => (
+                  <div className="exch" key={cv.id}>
+                    {cv.pergunta ? <div className="bubble user"><div className="brole">Cliente</div><div className="btext">{cv.pergunta}</div></div> : null}
+                    {cv.resposta ? <div className="bubble bot"><div className="brole">Max</div><div className="btext">{cv.resposta}</div></div> : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="conv-empty">
+                Sem conversa vinculada a este contato ainda.
+                {conversas.length > 0
+                  ? ` Há ${conversas.length} conversa(s) capturada(s) no Redis, mas falta o ingest enviar o contactId (ou o whatsapp) pra amarrar ao contato.`
+                  : " Nenhuma conversa capturada ainda — verifique se o nó HTTP do ingest está disparando."}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -361,10 +392,12 @@ function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; exclu
 
 export default function Dashboard({ initial }: { initial: Metrics }) {
   const [m, setM] = useState<Metrics>(initial);
+  const [convs, setConvs] = useState<ConvUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   function toggleTheme() { const t = theme === "dark" ? "light" : "dark"; setTheme(t); document.documentElement.setAttribute("data-theme", t); }
-  async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); } finally { setLoading(false); } }
+  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setConvs(j.conversas || []); } } catch {} }
+  async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); await carregarConversas(); } finally { setLoading(false); } }
 
   // Aquece o cache no primeiro acesso: se o volume do n8n não veio (cache vazio),
   // dispara a leitura ao vivo uma vez em segundo plano (sem o usuário clicar).
@@ -372,6 +405,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
   useEffect(() => {
     if (aqueceu.current) return;
     aqueceu.current = true;
+    carregarConversas();
     if (initial.mensagens == null && initial.fontes.n8n) atualizar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -433,7 +467,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
         <AnaliseMax />
-        <Atendimentos contatos={m.contatos} excluidosTeste={m.excluidosTeste} />
+        <Atendimentos contatos={m.contatos} excluidosTeste={m.excluidosTeste} conversas={convs} />
       </section>
 
       <section className="card">
