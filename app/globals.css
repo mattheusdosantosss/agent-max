@@ -665,6 +665,12 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .conv-h{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
 .conv-n{font-family:var(--font-mono),monospace;font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:999px}
 .detail .thread{max-height:340px;padding:0}
+.atend{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px dashed var(--border-soft)}
+.atend:first-child{border-top:0;padding-top:0}
+.atend-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.atend-data{font-family:var(--font-mono),monospace;font-size:10px;color:var(--faint)}
+.atend-motivo{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 9px;border-radius:999px}
+.atend-motivo.pend{color:var(--faint);background:var(--panel-3);font-weight:500;font-style:italic}
 .exch{display:flex;flex-direction:column;gap:6px}
 .bubble{max-width:80%;padding:9px 12px;border-radius:13px;font-size:13px;line-height:1.45}
 .bubble.user{align-self:flex-start;background:var(--panel-3);border:1px solid var(--border-soft);border-bottom-left-radius:4px}

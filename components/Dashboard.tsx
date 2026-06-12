@@ -304,10 +304,21 @@ function AnaliseMax() {
 }
 
 /* ---------------- Atendimentos (contatos + perfil + conversa) ---------------- */
-type ConvUI = { id: string; ts: number; pergunta: string; resposta: string; contactId: string; whatsapp: string; nome: string; motivo: string };
+type ConvUI = { id: string; ts: number; pergunta: string; resposta: string; contactId: string; whatsapp: string; nome: string; motivo: string; motivoIA: string; atendimentoId: string };
+type AtendUI = { atendimentoId: string; whatsapp: string; contactId: string; nome: string; inicio: number; fim: number; motivoIA: string; ids: string[] };
 function digitsTail(s: string) { return (s || "").replace(/\D/g, "").slice(-8); }
 
-function Atendimentos({ contatos, excluidosTeste, conversas }: { contatos: Contato[]; excluidosTeste: number; conversas: ConvUI[] }) {
+// Mapa contato → motivo classificado pela IA (do atendimento mais recente que já tem motivo).
+function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
+  const tail = digitsTail(c.telefone);
+  for (const a of atends) { // atends já vêm do mais recente pro mais antigo
+    if (!a.motivoIA) continue;
+    if ((c.id && a.contactId === c.id) || (tail && digitsTail(a.whatsapp) === tail)) return a.motivoIA;
+  }
+  return "";
+}
+
+function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { contatos: Contato[]; excluidosTeste: number; conversas: ConvUI[]; atendimentos: AtendUI[] }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
@@ -316,18 +327,23 @@ function Atendimentos({ contatos, excluidosTeste, conversas }: { contatos: Conta
     const t = q.trim().toLowerCase();
     return contatos.map((c, i) => ({ c, i })).filter(({ c }) => !t || `${c.nome} ${c.email} ${c.telefone} ${c.uf}`.toLowerCase().includes(t));
   }, [contatos, q]);
+  const convById = useMemo(() => { const m = new Map<string, ConvUI>(); for (const c of conversas) m.set(c.id, c); return m; }, [conversas]);
   if (!contatos.length) return <div className="empty">sem contatos ainda — ligue o HubSpot</div>;
   const cur = Math.min(sel, contatos.length - 1);
   const selC = contatos[cur];
   const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
-  const thread = useMemo(() => {
+  // Atendimentos do contato (cada um = uma "ida" ao Max, janela de 24h), do mais antigo p/ o recente.
+  const meusAtends = useMemo(() => {
     const cid = selC.id;
     const tail = digitsTail(selC.telefone);
-    return conversas
-      .filter((cv) => (cid && cv.contactId === cid) || (tail && cv.whatsapp && digitsTail(cv.whatsapp) === tail))
-      .sort((a, b) => a.ts - b.ts);
+    return atendimentos
+      .filter((a) => (cid && a.contactId === cid) || (tail && a.whatsapp && digitsTail(a.whatsapp) === tail))
+      .map((a) => ({ ...a, trocas: a.ids.map((id) => convById.get(id)).filter((cv): cv is ConvUI => !!cv && (!!cv.pergunta || !!cv.resposta)).sort((x, y) => x.ts - y.ts) }))
+      .filter((a) => a.trocas.length)
+      .sort((a, b) => a.inicio - b.inicio);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversas, selC.id, selC.telefone]);
+  }, [atendimentos, convById, selC.id, selC.telefone]);
+  const totalTrocas = meusAtends.reduce((s, a) => s + a.trocas.length, 0);
   return (
     <>
       <div className="summ">
@@ -365,13 +381,21 @@ function Atendimentos({ contatos, excluidosTeste, conversas }: { contatos: Conta
             <div className="pf wide"><div className="pl">Primeiro contato</div><div className="pv2">{dataCurta(selC.criadoEm)}</div></div>
           </div>
           <div className="conv">
-            <div className="conv-h">Conversa{thread.length ? <span className="conv-n">{thread.length} troca(s)</span> : null}</div>
-            {thread.length ? (
+            <div className="conv-h">Conversa{meusAtends.length ? <span className="conv-n">{meusAtends.length} atendimento(s) · {totalTrocas} troca(s)</span> : null}</div>
+            {meusAtends.length ? (
               <div className="thread">
-                {thread.map((cv) => (
-                  <div className="exch" key={cv.id}>
-                    {cv.pergunta ? <div className="bubble user"><div className="brole">Cliente</div><div className="btext">{cv.pergunta}</div></div> : null}
-                    {cv.resposta ? <div className="bubble bot"><div className="brole">Max</div><div className="btext">{cv.resposta}</div></div> : null}
+                {meusAtends.map((a) => (
+                  <div className="atend" key={a.atendimentoId}>
+                    <div className="atend-h">
+                      <span className="atend-data">{dataCurta(new Date(a.inicio).toISOString())}</span>
+                      {a.motivoIA ? <span className="atend-motivo">{a.motivoIA}</span> : <span className="atend-motivo pend">classificando…</span>}
+                    </div>
+                    {a.trocas.map((cv) => (
+                      <div className="exch" key={cv.id}>
+                        {cv.pergunta ? <div className="bubble user"><div className="brole">Cliente</div><div className="btext">{cv.pergunta}</div></div> : null}
+                        {cv.resposta ? <div className="bubble bot"><div className="brole">Max</div><div className="btext">{cv.resposta}</div></div> : null}
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -393,10 +417,18 @@ function Atendimentos({ contatos, excluidosTeste, conversas }: { contatos: Conta
 export default function Dashboard({ initial }: { initial: Metrics }) {
   const [m, setM] = useState<Metrics>(initial);
   const [convs, setConvs] = useState<ConvUI[]>([]);
+  const [atends, setAtends] = useState<AtendUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   function toggleTheme() { const t = theme === "dark" ? "light" : "dark"; setTheme(t); document.documentElement.setAttribute("data-theme", t); }
-  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setConvs(j.conversas || []); } } catch {} }
+  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setConvs(j.conversas || []); setAtends(j.atendimentos || []); } } catch {} }
+
+  // Contatos com o motivo enriquecido pela IA (quando há atendimento classificado),
+  // caindo no motivo cru do HubSpot enquanto a classificação não chegou.
+  const contatosIA = useMemo(
+    () => m.contatos.map((c) => { const mi = motivoIAdeContato(c, atends); return mi ? { ...c, motivo: mi } : c; }),
+    [m.contatos, atends]
+  );
   async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); await carregarConversas(); } finally { setLoading(false); } }
 
   // Aquece o cache no primeiro acesso: se o volume do n8n não veio (cache vazio),
@@ -440,7 +472,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
 
       <section className="card">
         <div className="card-head"><div><div className="title">Principais Dúvidas</div><div className="cap">clique numa dúvida pra ver os contatos · <span className="chip">motivo_do_contato</span></div></div><div className="right"><div className="rlab">tópicos</div><div className="rnum">{m.topicos.length}</div></div></div>
-        {m.contatos.length ? <DuvidasDrill contatos={m.contatos} /> : <Bars data={m.topicos} />}
+        {m.contatos.length ? <DuvidasDrill contatos={contatosIA} /> : <Bars data={m.topicos} />}
       </section>
 
       <section className="card">
@@ -467,7 +499,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
         <AnaliseMax />
-        <Atendimentos contatos={m.contatos} excluidosTeste={m.excluidosTeste} conversas={convs} />
+        <Atendimentos contatos={contatosIA} excluidosTeste={m.excluidosTeste} conversas={convs} atendimentos={atends} />
       </section>
 
       <section className="card">

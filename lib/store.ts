@@ -20,7 +20,9 @@ export type ConversaStore = {
   contactId?: string;
   whatsapp?: string;
   nome?: string;
-  motivo?: string;
+  motivo?: string;          // motivo cru vindo do Max/HubSpot (legado)
+  motivoIA?: string;        // motivo real classificado pelo cron /api/classificar
+  atendimentoId?: string;   // a qual atendimento (janela de 24h) este registro pertence
   promptTokens?: number;
   completionTokens?: number;
 };
@@ -84,6 +86,30 @@ export async function conversasRecentes(n = 50): Promise<ConversaStore[]> {
 export async function totalConversas(): Promise<number> {
   const r = redis(); if (!r) return 0;
   return (await r.zcard(K_INDEX)) ?? 0;
+}
+
+// Todas as conversas guardadas (até MAX_CONV). Usado pelo cron de classificação,
+// que precisa do conjunto inteiro pra agrupar por contato corretamente.
+export async function todasConversas(): Promise<ConversaStore[]> {
+  const r = redis(); if (!r) return [];
+  const ids = (await r.zrange(K_INDEX, 0, -1)) as string[];
+  if (!ids?.length) return [];
+  const vals = (await r.hmget(K_HASH, ...ids)) as Record<string, unknown> | null;
+  const out: ConversaStore[] = [];
+  for (const id of ids) {
+    const c = parse<ConversaStore>(vals?.[id]);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+// Regrava conversas já existentes (ex.: carimbar motivoIA + atendimentoId). Não mexe
+// no índice nem nos contadores de custo — só atualiza o JSON no hash.
+export async function atualizarConversas(convs: ConversaStore[]): Promise<void> {
+  const r = redis(); if (!r || !convs.length) return;
+  const payload: Record<string, string> = {};
+  for (const c of convs) payload[c.id] = JSON.stringify(c);
+  await r.hset(K_HASH, payload);
 }
 
 // Cache do volume de execuções do n8n: a contagem ao vivo é lenta (instância

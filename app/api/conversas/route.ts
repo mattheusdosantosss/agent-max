@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { conversasRecentes, totalConversas } from "@/lib/store";
+import { agruparAtendimentos } from "@/lib/atendimentos";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// GET: devolve as conversas persistidas no Redis (ingest), para vincular na aba
-// Atendimentos. Só os campos que a UI usa — nada de tokens.
+// GET: conversas persistidas no Redis + os atendimentos já agrupados (janela 24h),
+// pra UI montar a thread por atendimento e mostrar o motivo classificado pela IA.
 export async function GET() {
   try {
     const [recentes, total] = await Promise.all([conversasRecentes(500), totalConversas()]);
@@ -18,9 +19,23 @@ export async function GET() {
       whatsapp: c.whatsapp || "",
       nome: c.nome || "",
       motivo: c.motivo || "",
+      motivoIA: c.motivoIA || "",
+      atendimentoId: c.atendimentoId || "",
     }));
-    return NextResponse.json({ conversas, total });
+
+    const atendimentos = agruparAtendimentos(recentes).map((a) => ({
+      atendimentoId: a.atendimentoId,
+      whatsapp: a.whatsapp || "",
+      contactId: a.contactId || "",
+      nome: a.nome || "",
+      inicio: a.inicio,
+      fim: a.fim,
+      motivoIA: a.motivoIA || "",
+      ids: a.registros.map((r) => r.id),
+    }));
+
+    return NextResponse.json({ conversas, atendimentos, total });
   } catch (e: any) {
-    return NextResponse.json({ conversas: [], total: 0, erro: String(e?.message ?? e) });
+    return NextResponse.json({ conversas: [], atendimentos: [], total: 0, erro: String(e?.message ?? e) });
   }
 }

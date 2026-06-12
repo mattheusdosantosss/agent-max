@@ -92,6 +92,51 @@ function agregarUF(contatos: Contato[]): RegiaoCount[] {
     .sort((a, b) => (a.uf === "—" ? 1 : b.uf === "—" ? -1 : b.value - a.value));
 }
 
+// Resolve o id do contato no HubSpot a partir do número de WhatsApp. Telefone é
+// chato de casar (formatos variados), então tentamos algumas variações com EQ e,
+// por último, CONTAINS_TOKEN. Best-effort: devolve null se não achar.
+export async function buscarContatoIdPorTelefone(whatsapp: string): Promise<string | null> {
+  const dig = (whatsapp || "").replace(/\D/g, "");
+  if (dig.length < 8) return null;
+  const tail = dig.slice(-8);
+  const semDDI = dig.startsWith("55") ? dig.slice(2) : dig;
+  const variantes = Array.from(new Set([`+${dig}`, dig, semDDI, `+${semDDI}`]));
+
+  // HubSpot Search aceita no máx. 5 filterGroups (OR entre grupos). Usamos IN p/
+  // cobrir todas as variações de formato num filtro só, + CONTAINS_TOKEN como rede.
+  const filterGroups: any[] = [
+    { filters: [{ propertyName: "hs_whatsapp_phone_number", operator: "IN", values: variantes }] },
+    { filters: [{ propertyName: "phone", operator: "IN", values: variantes }] },
+    { filters: [{ propertyName: "mobilephone", operator: "IN", values: variantes }] },
+    { filters: [{ propertyName: "hs_whatsapp_phone_number", operator: "CONTAINS_TOKEN", value: tail }] },
+  ];
+
+  const res = await fetch(`${BASE}/crm/v3/objects/contacts/search`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ filterGroups, properties: ["hs_whatsapp_phone_number", "phone"], limit: 1 }),
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.results?.[0]?.id ?? null;
+}
+
+// Sobrescreve o motivo_do_contato. Devolve {ok, status} — status 403 = token sem o
+// escopo crm.objects.contacts.write (precisa liberar no app privado do HubSpot).
+export async function atualizarMotivoContato(
+  contactId: string,
+  motivo: string
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch(`${BASE}/crm/v3/objects/contacts/${contactId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ properties: { motivo_do_contato: motivo } }),
+    cache: "no-store",
+  });
+  return { ok: res.ok, status: res.status };
+}
+
 export async function getHubspotMetrics() {
   const todas = await buscarInteracoes();
   const validos = todas.filter((c) => !ehTeste(c.properties.email, nomeDe(c.properties)));
