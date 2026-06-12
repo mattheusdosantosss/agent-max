@@ -31,6 +31,9 @@ export async function GET() {
       inicio: a.inicio,
       fim: a.fim,
       motivoIA: a.motivoIA || "",
+      resumoIA: a.resumoIA || "",
+      resolvidoIA: a.resolvidoIA || "",
+      sentimentoIA: a.sentimentoIA || "",
       ids: a.registros.map((r) => r.id),
     }));
 

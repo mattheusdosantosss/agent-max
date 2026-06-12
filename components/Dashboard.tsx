@@ -305,8 +305,9 @@ function AnaliseMax() {
 
 /* ---------------- Atendimentos (contatos + perfil + conversa) ---------------- */
 type ConvUI = { id: string; ts: number; pergunta: string; resposta: string; contactId: string; whatsapp: string; nome: string; motivo: string; motivoIA: string; atendimentoId: string };
-type AtendUI = { atendimentoId: string; whatsapp: string; contactId: string; nome: string; inicio: number; fim: number; motivoIA: string; ids: string[] };
+type AtendUI = { atendimentoId: string; whatsapp: string; contactId: string; nome: string; inicio: number; fim: number; motivoIA: string; resumoIA: string; resolvidoIA: string; sentimentoIA: string; ids: string[] };
 function digitsTail(s: string) { return (s || "").replace(/\D/g, "").slice(-8); }
+function resolvidoLabel(r: string) { return r === "sim" ? "resolvido" : r === "parcial" ? "parcial" : "não resolvido"; }
 
 // Mapa contato → motivo classificado pela IA (do atendimento mais recente que já tem motivo).
 function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
@@ -389,7 +390,10 @@ function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { c
                     <div className="atend-h">
                       <span className="atend-data">{dataCurta(new Date(a.inicio).toISOString())}</span>
                       {a.motivoIA ? <span className="atend-motivo">{a.motivoIA}</span> : <span className="atend-motivo pend">classificando…</span>}
+                      {a.resolvidoIA && <span className={`atend-badge res-${a.resolvidoIA}`}>{resolvidoLabel(a.resolvidoIA)}</span>}
+                      {a.sentimentoIA && <span className={`atend-badge sent-${a.sentimentoIA}`}>{a.sentimentoIA}</span>}
                     </div>
+                    {a.resumoIA && <div className="atend-resumo">{a.resumoIA}</div>}
                     {a.trocas.map((cv) => (
                       <div className="exch" key={cv.id}>
                         {cv.pergunta ? <div className="bubble user"><div className="brole">Cliente</div><div className="btext">{cv.pergunta}</div></div> : null}

@@ -21,6 +21,9 @@ export type Atendimento = {
   fim: number;                  // ts da última
   registros: ConversaStore[];   // ordenados por ts
   motivoIA?: string;            // carimbado pelo cron de classificação (mesmo p/ todo o atendimento)
+  resumoIA?: string;            // análise curta do atendimento
+  resolvidoIA?: string;         // sim | parcial | nao
+  sentimentoIA?: string;        // positivo | neutro | negativo
 };
 
 // Chave de identidade do contato: whatsapp normalizado; cai pra contactId ou id do
@@ -60,6 +63,9 @@ export function agruparAtendimentos(convs: ConversaStore[]): Atendimento[] {
         fim,
         registros: atual,
         motivoIA: atual.find((r) => r.motivoIA)?.motivoIA,
+        resumoIA: atual.find((r) => r.resumoIA)?.resumoIA,
+        resolvidoIA: atual.find((r) => r.resolvidoIA)?.resolvidoIA,
+        sentimentoIA: atual.find((r) => r.sentimentoIA)?.sentimentoIA,
       });
       atual = [];
     };
@@ -75,7 +81,9 @@ export function agruparAtendimentos(convs: ConversaStore[]): Atendimento[] {
   return out.sort((a, b) => b.inicio - a.inicio); // mais recente primeiro
 }
 
-// Um atendimento precisa ser (re)classificado se algum registro ainda não tem motivoIA.
+// Um atendimento precisa ser (re)classificado se algum registro ainda não tem o motivo
+// OU a análise (resumo). O OR no resumo faz os já classificados antes da análise
+// individual serem reprocessados uma vez pra ganharem o diagnóstico completo.
 export function precisaClassificar(a: Atendimento): boolean {
-  return a.registros.some((r) => !r.motivoIA);
+  return a.registros.some((r) => !r.motivoIA || !r.resumoIA);
 }

@@ -22,6 +22,9 @@ export type ConversaStore = {
   nome?: string;
   motivo?: string;          // motivo cru vindo do Max/HubSpot (legado)
   motivoIA?: string;        // motivo real classificado pelo cron /api/classificar
+  resumoIA?: string;        // análise curta do atendimento (1-2 frases)
+  resolvidoIA?: string;     // "sim" | "parcial" | "nao"
+  sentimentoIA?: string;    // "positivo" | "neutro" | "negativo"
   atendimentoId?: string;   // a qual atendimento (janela de 24h) este registro pertence
   promptTokens?: number;
   completionTokens?: number;

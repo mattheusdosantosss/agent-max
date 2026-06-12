@@ -43,19 +43,29 @@ function textoDoAtendimento(a: Atendimento): string {
     .slice(0, 3500);
 }
 
-type Classificacao = { motivo: string; fora_de_escopo: boolean };
+type Classificacao = {
+  motivo: string;
+  fora_de_escopo: boolean;
+  resumo: string;
+  resolvido: string;     // sim | parcial | nao
+  sentimento: string;    // positivo | neutro | negativo
+};
+
+const RESOLVIDO = new Set(["sim", "parcial", "nao"]);
+const SENTIMENTO = new Set(["positivo", "neutro", "negativo"]);
 
 async function classificarLote(
   itens: { i: number; texto: string }[]
 ): Promise<Record<number, Classificacao>> {
-  const sys = `Você classifica o MOTIVO REAL de contato de clientes com o "Max", assistente de WhatsApp do The Best Speaker Brasil 2026 (competição de palestrantes). Para cada atendimento, leia a conversa e diga em poucas palavras por que a pessoa procurou o Max — a causa concreta, não algo genérico.
-
-Prefira reutilizar uma destas categorias quando encaixar: ${CATEGORIAS.join("; ")}.
-Só crie um rótulo novo (curto, 2-4 palavras, em português) quando NENHUMA delas servir.
-Marque "fora_de_escopo": true quando o contato não fizer sentido para o Max (spam, engano, teste, assunto totalmente alheio à competição).
+  const sys = `Você analisa atendimentos do "Max", assistente de WhatsApp do The Best Speaker Brasil 2026 (competição de palestrantes). Para CADA atendimento, leia a conversa e produza:
+- "motivo": o MOTIVO REAL do contato em poucas palavras (a causa concreta, não genérica). Prefira reutilizar uma destas categorias quando encaixar: ${CATEGORIAS.join("; ")}. Só crie um rótulo novo (curto, 2-4 palavras, em português) quando NENHUMA servir.
+- "fora_de_escopo": true se o contato não faz sentido para o Max (spam, engano, teste, assunto alheio à competição).
+- "resumo": 1-2 frases explicando o que a pessoa precisava e como terminou (análise objetiva, em português).
+- "resolvido": "sim" (Max resolveu), "parcial" (resolveu em parte ou ficou pendente) ou "nao" (não resolveu / foi escalado sem solução).
+- "sentimento": "positivo", "neutro" ou "negativo" — o tom do cliente ao longo da conversa.
 
 Responda APENAS com JSON válido (sem markdown):
-{"resultados":[{"i": number, "motivo": "rótulo curto", "fora_de_escopo": boolean}]}`;
+{"resultados":[{"i": number, "motivo": "...", "fora_de_escopo": boolean, "resumo": "...", "resolvido": "sim|parcial|nao", "sentimento": "positivo|neutro|negativo"}]}`;
 
   const user = itens.map((it) => `### Atendimento i=${it.i}\n${it.texto}`).join("\n\n");
 
@@ -66,7 +76,15 @@ Responda APENAS com JSON válido (sem markdown):
     const i = Number(r.i);
     if (!Number.isFinite(i)) continue;
     const motivo = String(r.motivo ?? "").trim();
-    out[i] = { motivo: motivo || "Outros assuntos", fora_de_escopo: r.fora_de_escopo === true };
+    const resolvido = String(r.resolvido ?? "").trim().toLowerCase();
+    const sentimento = String(r.sentimento ?? "").trim().toLowerCase();
+    out[i] = {
+      motivo: motivo || "Outros assuntos",
+      fora_de_escopo: r.fora_de_escopo === true,
+      resumo: String(r.resumo ?? "").trim().slice(0, 500),
+      resolvido: RESOLVIDO.has(resolvido) ? resolvido : "",
+      sentimento: SENTIMENTO.has(sentimento) ? sentimento : "",
+    };
   }
   return out;
 }
@@ -102,6 +120,9 @@ async function handler(req: Request) {
     const motivo = c.fora_de_escopo ? "Fora de escopo" : c.motivo;
     for (const r of a.registros) {
       r.motivoIA = motivo;
+      r.resumoIA = c.resumo || motivo; // nunca vazio: evita reprocessar em loop
+      r.resolvidoIA = c.resolvido;
+      r.sentimentoIA = c.sentimento;
       r.atendimentoId = a.atendimentoId;
       mudados.push(r);
     }

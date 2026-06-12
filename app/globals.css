@@ -73,9 +73,9 @@ body {
 }
 
 .wrap {
-  max-width: 1180px;
+  max-width: 1480px;
   margin: 0 auto;
-  padding: 0 22px 80px;
+  padding: 0 32px 80px;
   position: relative;
   z-index: 1;
 }
@@ -671,6 +671,14 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .atend-data{font-family:var(--font-mono),monospace;font-size:10px;color:var(--faint)}
 .atend-motivo{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 9px;border-radius:999px}
 .atend-motivo.pend{color:var(--faint);background:var(--panel-3);font-weight:500;font-style:italic}
+.atend-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;text-transform:lowercase;border:1px solid transparent}
+.res-sim{color:#2ec28a;background:rgba(46,194,138,.12);border-color:rgba(46,194,138,.3)}
+.res-parcial{color:#e0a430;background:rgba(224,164,48,.12);border-color:rgba(224,164,48,.3)}
+.res-nao{color:#e0604f;background:rgba(224,96,79,.12);border-color:rgba(224,96,79,.3)}
+.sent-positivo{color:#2ec28a;background:rgba(46,194,138,.1)}
+.sent-neutro{color:var(--muted);background:var(--panel-3)}
+.sent-negativo{color:#e0604f;background:rgba(224,96,79,.1)}
+.atend-resumo{font-size:12px;color:var(--muted);line-height:1.5;background:var(--panel-3);border-left:2px solid var(--accent);border-radius:0;padding:7px 10px;margin:2px 0 2px}
 .exch{display:flex;flex-direction:column;gap:6px}
 .bubble{max-width:80%;padding:9px 12px;border-radius:13px;font-size:13px;line-height:1.45}
 .bubble.user{align-self:flex-start;background:var(--panel-3);border:1px solid var(--border-soft);border-bottom-left-radius:4px}
