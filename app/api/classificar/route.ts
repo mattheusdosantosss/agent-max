@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { todasConversas, atualizarConversas, type ConversaStore } from "@/lib/store";
 import { agruparAtendimentos, precisaClassificar, type Atendimento } from "@/lib/atendimentos";
 import { buscarContatoIdPorTelefone, atualizarMotivoContato } from "@/lib/hubspot";
+import { chamarLLM } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,8 +46,6 @@ function textoDoAtendimento(a: Atendimento): string {
 type Classificacao = { motivo: string; fora_de_escopo: boolean };
 
 async function classificarLote(
-  key: string,
-  modelo: string,
   itens: { i: number; texto: string }[]
 ): Promise<Record<number, Classificacao>> {
   const sys = `Você classifica o MOTIVO REAL de contato de clientes com o "Max", assistente de WhatsApp do The Best Speaker Brasil 2026 (competição de palestrantes). Para cada atendimento, leia a conversa e diga em poucas palavras por que a pessoa procurou o Max — a causa concreta, não algo genérico.
@@ -60,20 +59,8 @@ Responda APENAS com JSON válido (sem markdown):
 
   const user = itens.map((it) => `### Atendimento i=${it.i}\n${it.texto}`).join("\n\n");
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: modelo,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: sys }, { role: "user", content: user }],
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
-
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
+  const content = await chamarLLM({ system: sys, user, json: true, temperature: 0.2 });
+  const parsed = JSON.parse(content || "{}");
   const out: Record<number, Classificacao> = {};
   for (const r of parsed.resultados ?? []) {
     const i = Number(r.i);
@@ -86,10 +73,6 @@ Responda APENAS com JSON válido (sem markdown):
 
 async function handler(req: Request) {
   if (!autorizado(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return NextResponse.json({ error: "OPENAI_API_KEY ausente no Vercel" }, { status: 400 });
-  const modelo = process.env.CLASSIFY_MODEL ?? process.env.ANALISE_MODEL ?? "gpt-4.1-mini";
 
   const todas = await todasConversas();
   if (!todas.length) return NextResponse.json({ ok: true, classificados: 0, restantes: 0, hubspotAtualizados: 0, aviso: "nenhuma conversa no Redis ainda" });
@@ -105,7 +88,7 @@ async function handler(req: Request) {
   // 1) Classifica o lote numa única chamada.
   let result: Record<number, Classificacao>;
   try {
-    result = await classificarLote(key, modelo, lote.map((a, i) => ({ i, texto: textoDoAtendimento(a) })));
+    result = await classificarLote(lote.map((a, i) => ({ i, texto: textoDoAtendimento(a) })));
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 502 });
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getHubspotMetrics } from "@/lib/hubspot";
 import { getN8nConversas } from "@/lib/n8n";
 import { conversasRecentes, totalConversas, salvarAnalise, analiseLatest } from "@/lib/store";
+import { chamarLLM, modeloPadrao } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,14 +21,7 @@ export async function GET() {
 
 // POST: gera nova análise a partir do corpus persistido (fallback n8n) e salva.
 export async function POST() {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY não configurada no Vercel (Settings → Environment Variables → Redeploy)." },
-      { status: 400 }
-    );
-  }
-  const modelo = process.env.ANALISE_MODEL ?? "gpt-4.1-mini";
+  const modelo = modeloPadrao();
 
   let hub: any = null;
   try { hub = await getHubspotMetrics(); } catch (e) { console.error("analise/hubspot:", e); }
@@ -73,26 +67,14 @@ export async function POST() {
 AMOSTRA DE CONVERSAS (${convs.length}, fonte: ${fonteConversas}):
 ${transcripts}`;
 
-  let res: Response;
+  let content: string;
   try {
-    res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: modelo, temperature: 0.3, response_format: { type: "json_object" },
-        messages: [{ role: "system", content: sys }, { role: "user", content: user }],
-      }),
-    });
+    content = await chamarLLM({ system: sys, user, json: true, temperature: 0.3 });
   } catch (e: any) {
-    return NextResponse.json({ error: `Falha ao chamar a OpenAI: ${e?.message ?? e}` }, { status: 502 });
+    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 502 });
   }
-  if (!res.ok) {
-    const t = await res.text();
-    return NextResponse.json({ error: `OpenAI ${res.status}: ${t.slice(0, 240)}` }, { status: 502 });
-  }
-  const data = await res.json();
   let analise: any;
-  try { analise = JSON.parse(data.choices?.[0]?.message?.content ?? "{}"); }
+  try { analise = JSON.parse(content || "{}"); }
   catch { return NextResponse.json({ error: "A resposta do LLM não veio em JSON válido." }, { status: 502 }); }
 
   const result = {
