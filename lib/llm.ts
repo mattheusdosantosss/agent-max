@@ -18,7 +18,7 @@ export function provider(): "openai" | "gemini" | "anthropic" {
 export function modeloPadrao(override?: string): string {
   if (override) return override;
   switch (provider()) {
-    case "gemini": return process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+    case "gemini": return process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
     case "anthropic": return process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001";
     default: return process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   }
@@ -42,26 +42,35 @@ async function chamarOpenAI(o: LLMOpts, modelo: string): Promise<string> {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
+// Nomes de modelo do Gemini mudam com frequência (o Google aposenta versões). Por isso,
+// se o modelo configurado der 404 (não existe), tentamos os próximos da lista — assim a
+// rota se recupera sozinha de troca de nomes sem precisar de novo deploy.
+const GEMINI_FALLBACKS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-flash-latest"];
+
 async function chamarGemini(o: LLMOpts, modelo: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY ausente no Vercel");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: o.system }] },
-      contents: [{ role: "user", parts: [{ text: o.user }] }],
-      generationConfig: {
-        temperature: o.temperature ?? 0.3,
-        ...(o.json ? { responseMimeType: "application/json" } : {}),
-      },
-    }),
+  const candidatos = Array.from(new Set([modelo, ...GEMINI_FALLBACKS]));
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: o.system }] },
+    contents: [{ role: "user", parts: [{ text: o.user }] }],
+    generationConfig: {
+      temperature: o.temperature ?? 0.3,
+      ...(o.json ? { responseMimeType: "application/json" } : {}),
+    },
   });
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 220)}`);
-  const data = await res.json();
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  return parts.map((p: any) => p?.text ?? "").join("").trim();
+
+  let ultimoErro = "";
+  for (const m of candidatos) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`;
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (res.status === 404) { ultimoErro = `404 em ${m}`; continue; } // modelo indisponível: tenta o próximo
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 220)}`);
+    const data = await res.json();
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    return parts.map((p: any) => p?.text ?? "").join("").trim();
+  }
+  throw new Error(`Nenhum modelo Gemini disponível para esta chave (tentei: ${candidatos.join(", ")}). Último: ${ultimoErro}`);
 }
 
 async function chamarAnthropic(o: LLMOpts, modelo: string): Promise<string> {
