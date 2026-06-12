@@ -45,7 +45,12 @@ async function chamarOpenAI(o: LLMOpts, modelo: string): Promise<string> {
 // Nomes de modelo do Gemini mudam com frequência (o Google aposenta versões). Por isso,
 // se o modelo configurado der 404 (não existe), tentamos os próximos da lista — assim a
 // rota se recupera sozinha de troca de nomes sem precisar de novo deploy.
-const GEMINI_FALLBACKS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-flash-latest"];
+// Inclui variantes -lite, que têm cotas grátis próprias (mais folgadas) — úteis quando
+// o modelo principal estoura a cota do free tier (429).
+const GEMINI_FALLBACKS = [
+  "gemini-2.0-flash", "gemini-2.5-flash",
+  "gemini-2.0-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest",
+];
 
 async function chamarGemini(o: LLMOpts, modelo: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -64,13 +69,15 @@ async function chamarGemini(o: LLMOpts, modelo: string): Promise<string> {
   for (const m of candidatos) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`;
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-    if (res.status === 404) { ultimoErro = `404 em ${m}`; continue; } // modelo indisponível: tenta o próximo
+    // 404 = modelo não existe; 429 = cota do free tier estourada nesse modelo.
+    // Em ambos, tenta o próximo candidato (cotas grátis são por modelo).
+    if (res.status === 404 || res.status === 429) { ultimoErro = `${res.status} em ${m}`; continue; }
     if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 220)}`);
     const data = await res.json();
     const parts = data.candidates?.[0]?.content?.parts ?? [];
     return parts.map((p: any) => p?.text ?? "").join("").trim();
   }
-  throw new Error(`Nenhum modelo Gemini disponível para esta chave (tentei: ${candidatos.join(", ")}). Último: ${ultimoErro}`);
+  throw new Error(`Gemini sem cota grátis disponível agora (tentei: ${candidatos.join(", ")}). Último: ${ultimoErro}. Aguarde ~1 min (limite por minuto) e tente de novo.`);
 }
 
 async function chamarAnthropic(o: LLMOpts, modelo: string): Promise<string> {
