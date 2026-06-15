@@ -25,7 +25,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const id = String(body.id ?? body.executionId ?? body.contactId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    // contactId é case-sensitive: o n8n às vezes manda "contactid"/"contact_id".
+    const contactId = body.contactId ?? body.contactid ?? body.contact_id ?? body.contactID;
+    const id = String(body.id ?? body.executionId ?? contactId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const nome =
       body.nome ??
       (body.firstname ? `${body.firstname} ${body.lastname ?? ""}`.trim() : undefined);
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
       ts: Number.isFinite(tsNum) ? tsNum : Date.now(),
       pergunta: String(body.pergunta ?? body.msgcli ?? body.mensagem ?? "").slice(0, 2000),
       resposta: String(body.resposta ?? body.output ?? body.resposta_max ?? "").slice(0, 2000),
-      contactId: body.contactId ? String(body.contactId) : undefined,
+      contactId: contactId ? String(contactId) : undefined,
       whatsapp: body.whatsapp ? String(body.whatsapp) : undefined,
       nome: nome ? String(nome) : undefined,
       motivo: body.motivo ? String(body.motivo) : undefined,
