@@ -313,13 +313,17 @@ type AtendUI = { atendimentoId: string; whatsapp: string; contactId: string; nom
 function digitsTail(s: string) { return (s || "").replace(/\D/g, "").slice(-8); }
 function resolvidoLabel(r: string) { return r === "sim" ? "resolvido" : r === "parcial" ? "parcial" : "não resolvido"; }
 
-// Mapa contato → motivo classificado pela IA (do atendimento mais recente que já tem motivo).
+// Casa um atendimento (Redis) com um contato (HubSpot): por contactId, ou pelo final do
+// WhatsApp contra o telefone OU o hs_whatsapp_phone_number do contato.
+function casaAtend(a: { contactId: string; whatsapp: string }, c: Contato): boolean {
+  if (a.contactId && c.id && a.contactId === c.id) return true;
+  const at = digitsTail(a.whatsapp);
+  return !!at && (at === digitsTail(c.telefone) || at === digitsTail(c.whatsapp));
+}
+
+// Motivo da IA do atendimento mais recente que já tem motivo (atends vêm do mais recente).
 function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
-  const tail = digitsTail(c.telefone);
-  for (const a of atends) { // atends já vêm do mais recente pro mais antigo
-    if (!a.motivoIA) continue;
-    if ((c.id && a.contactId === c.id) || (tail && digitsTail(a.whatsapp) === tail)) return a.motivoIA;
-  }
+  for (const a of atends) { if (a.motivoIA && casaAtend(a, c)) return a.motivoIA; }
   return "";
 }
 
@@ -339,15 +343,13 @@ function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { c
   const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
   // Atendimentos do contato (cada um = uma "ida" ao Max, janela de 24h), do mais antigo p/ o recente.
   const meusAtends = useMemo(() => {
-    const cid = selC.id;
-    const tail = digitsTail(selC.telefone);
     return atendimentos
-      .filter((a) => (cid && a.contactId === cid) || (tail && a.whatsapp && digitsTail(a.whatsapp) === tail))
+      .filter((a) => casaAtend(a, selC))
       .map((a) => ({ ...a, trocas: a.ids.map((id) => convById.get(id)).filter((cv): cv is ConvUI => !!cv && (!!cv.pergunta || !!cv.resposta)).sort((x, y) => x.ts - y.ts) }))
       .filter((a) => a.trocas.length)
       .sort((a, b) => a.inicio - b.inicio);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [atendimentos, convById, selC.id, selC.telefone]);
+  }, [atendimentos, convById, selC.id, selC.telefone, selC.whatsapp]);
   const totalTrocas = meusAtends.reduce((s, a) => s + a.trocas.length, 0);
   return (
     <>

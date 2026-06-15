@@ -34,7 +34,7 @@ async function buscarInteracoes(): Promise<HsContact[]> {
       ],
       properties: [
         "motivo_do_contato", "motivo_da_escalacao", "atendimento_humano", "data_de_escalacao",
-        "firstname", "lastname", "email", "phone", "state", "createdate", "produto",
+        "firstname", "lastname", "email", "phone", "hs_whatsapp_phone_number", "state", "createdate", "produto",
       ],
       sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
       limit: 100,
@@ -146,7 +146,8 @@ export async function getHubspotMetrics() {
     id: c.id ?? "",
     nome: nomeDe(c.properties),
     email: (c.properties.email ?? "").trim(),
-    telefone: (c.properties.phone ?? "").trim(),
+    telefone: (c.properties.phone || c.properties.hs_whatsapp_phone_number || "").trim(),
+    whatsapp: (c.properties.hs_whatsapp_phone_number ?? "").trim(),
     motivo: normalizarTopico(c.properties.motivo_do_contato),
     escalou: escalou(c.properties),
     uf: normalizarUF(c.properties.state),

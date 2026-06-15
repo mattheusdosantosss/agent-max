@@ -7,6 +7,7 @@ export type Contato = {
   nome: string;
   email: string;
   telefone: string;
+  whatsapp: string; // hs_whatsapp_phone_number (p/ casar com as conversas do Redis)
   motivo: string;   // normalizado
   escalou: boolean;
   uf: string;       // normalizado ("—" se vazio)
