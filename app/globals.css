@@ -505,8 +505,8 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 /* ========================================================================
    v4 — Atendimentos (mestre-detalhe: contatos + conversa lado a lado)
    ======================================================================== */
-.split{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:stretch}
-@media(max-width:780px){.split{grid-template-columns:1fr}.mlist{flex:none;max-height:60vh}.detail{min-height:auto}}
+.split{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:stretch;height:600px}
+@media(max-width:780px){.split{grid-template-columns:1fr;height:auto}.master{height:auto}.mlist{flex:none;max-height:60vh}.detail{height:auto;overflow:visible}.detail .conv{flex:none;overflow:visible}.detail .thread{flex:none;max-height:420px}}
 .master{border:1px solid var(--border-soft);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;background:var(--panel-2)}
 .msearch{padding:10px}
 .msearch input{width:100%;background:var(--panel-3);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:8px 11px;font:inherit;font-size:12.5px;outline:none}
@@ -526,7 +526,7 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .escdot{width:7px;height:7px;border-radius:50%;background:var(--track)}
 .escdot.on{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 
-.detail{border:1px solid var(--border-soft);border-radius:12px;display:flex;flex-direction:column;min-height:440px;background:radial-gradient(120% 80% at 50% 0%,#16131a,#0e0e12 70%)}
+.detail{border:1px solid var(--border-soft);border-radius:12px;display:flex;flex-direction:column;height:100%;overflow:hidden;background:radial-gradient(120% 80% at 50% 0%,#16131a,#0e0e12 70%)}
 .dempty{margin:auto;text-align:center;color:var(--faint);font-size:13px;padding:30px;line-height:1.6}
 .dempty .big{font-size:30px;margin-bottom:8px;opacity:.5}
 .dempty .hint{font-size:11px;color:var(--faint);opacity:.8}
@@ -618,8 +618,8 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 /* ========================================================================
    v7 — Atendimentos: perfil do contato (sem mensagens)
    ======================================================================== */
-.detail .dhead{flex-wrap:wrap}
-.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-soft);padding:0}
+.detail .dhead{flex-wrap:wrap;flex-shrink:0}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-soft);padding:0;flex-shrink:0}
 .pf{background:var(--panel-2);padding:13px 16px}
 .pf.wide{grid-column:1 / -1}
 .pl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:4px}
@@ -665,11 +665,11 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 /* ========================================================================
    v23 — thread de conversa (Cliente ↔ Max) na aba Atendimentos
    ======================================================================== */
-.detail .conv{margin-top:16px;border-top:1px solid var(--border-soft);padding:14px 0 0;background:transparent;border:0;border-top:1px solid var(--border-soft);border-radius:0;cursor:default}
+.detail .conv{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;margin-top:16px;padding:14px 16px 0;background:transparent;border:0;border-top:1px solid var(--border-soft);border-radius:0;cursor:default}
 .detail .conv:hover{border-color:var(--border-soft)}
-.conv-h{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+.conv-h{flex-shrink:0;display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
 .conv-n{font-family:var(--font-mono),monospace;font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:999px}
-.detail .thread{max-height:340px;padding:0}
+.detail .thread{flex:1;min-height:0;max-height:none;padding:0 2px 0 0}
 .atend{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px dashed var(--border-soft)}
 .atend:first-child{border-top:0;padding-top:0}
 .atend-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
