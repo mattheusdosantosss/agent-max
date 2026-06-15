@@ -15,8 +15,8 @@
   --border: #26262c;
   --border-soft: #1e1e23;
   --text: #f4f4f6;
-  --muted: #8b8b95;
-  --faint: #5a5a63;
+  --muted: #c4c4cd;
+  --faint: #9a9aa4;
   --track: #232329;
   --shadow: none;
 }
@@ -583,8 +583,10 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .vol-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
 .i-cham{background:var(--track)}
 .i-esc{background:linear-gradient(135deg,var(--accent),var(--accent-2))}
-.vol{position:relative;display:flex;align-items:flex-end;gap:14px;height:200px;padding:6px 4px 0}
-.vcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.vol-wrap{position:relative}
+.vol{position:relative;display:flex;align-items:stretch;gap:14px;height:200px;padding:6px 4px 0}
+.vcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+.vbar{flex:1;width:100%;min-height:0;display:flex;align-items:flex-end;justify-content:center}
 .vstack{width:60%;max-width:46px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:7px;overflow:hidden;background:var(--track);transition:filter .12s}
 .vcol:hover .vstack{filter:brightness(1.2)}
 .vseg-esc{background:linear-gradient(135deg,var(--accent),var(--accent-2));min-height:0}
@@ -605,9 +607,10 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .seg button{background:transparent;border:0;color:var(--muted);font:inherit;font-size:11.5px;padding:5px 11px;border-radius:7px;cursor:pointer;transition:background .12s,color .12s}
 .seg button:hover{color:var(--text)}
 .seg button.on{background:var(--accent);color:#1a1008;font-weight:700}
-.vol{overflow-x:auto;scrollbar-width:thin}
+.vol{overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain;scrollbar-width:thin}
 .vol::-webkit-scrollbar{height:8px}
-.vol::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px}
+.vol::-webkit-scrollbar-track{background:transparent}
+.vol::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px;border:2px solid var(--panel)}
 .vcol{min-width:34px}
 
 /* ========================================================================

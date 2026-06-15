@@ -173,23 +173,27 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
           ))}
         </div>
       </div>
-      <div className="vol" ref={boxRef}>
-        {periodos.map((p) => {
-          const h = (p.cham / vmax) * 100;
-          const escFrac = p.cham ? p.esc / p.cham : 0;
-          return (
-            <div className="vcol" key={p.ord}
-              onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, label: p.label, cham: p.cham, esc: p.esc }); }}
-              onMouseLeave={() => setTip(null)}>
-              <span className="vtot">{p.cham}</span>
-              <div className="vstack" style={{ height: `${h}%` }}>
-                <div className="vseg-rest" style={{ flex: 1 - escFrac }} />
-                <div className="vseg-esc" style={{ flex: escFrac }} />
+      <div className="vol-wrap" ref={boxRef}>
+        <div className="vol">
+          {periodos.map((p) => {
+            const h = (p.cham / vmax) * 100;
+            const escFrac = p.cham ? p.esc / p.cham : 0;
+            return (
+              <div className="vcol" key={p.ord}
+                onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, label: p.label, cham: p.cham, esc: p.esc }); }}
+                onMouseLeave={() => setTip(null)}>
+                <span className="vtot">{p.cham}</span>
+                <div className="vbar">
+                  <div className="vstack" style={{ height: `${h}%` }}>
+                    <div className="vseg-rest" style={{ flex: 1 - escFrac }} />
+                    <div className="vseg-esc" style={{ flex: escFrac }} />
+                  </div>
+                </div>
+                <span className="vx">{p.label}</span>
               </div>
-              <span className="vx">{p.label}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
         {tip && (
           <div className="vtip on" style={{ left: tip.x, top: tip.y - 10 }}>
             <b>{tip.label}</b> · <span className="tn">{tip.cham}</span> chamaram · <span className="tn">{tip.esc}</span> escalados ({tip.cham ? Math.round((tip.esc / tip.cham) * 100) : 0}%)
