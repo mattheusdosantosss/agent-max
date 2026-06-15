@@ -16,8 +16,13 @@ const BATCH = 12;
 // quando nenhuma serve, inclusive marcar contatos fora de escopo.
 const CATEGORIAS = [
   "Inscrição", "Pagamento", "Datas e horários", "Etapas da competição",
-  "Uso da plataforma", "Vídeo de palestra", "Reclamação / suporte", "Outros assuntos",
+  "Uso da plataforma", "Vídeo de palestra", "Reclamação / suporte",
+  "Resposta automática de IA", "Engano / número errado", "Spam", "Teste interno",
+  "Outros assuntos",
 ];
+
+// Rótulos genéricos que o modo ?refazer=1 reavalia (mesmo já classificados).
+const GENERICOS = new Set(["outros assuntos", "fora de escopo", ""]);
 
 function autorizado(req: Request): boolean {
   const secret = process.env.CLASSIFY_SECRET;
@@ -58,11 +63,16 @@ async function classificarLote(
   itens: { i: number; texto: string }[]
 ): Promise<Record<number, Classificacao>> {
   const sys = `Você analisa atendimentos do "Max", assistente de WhatsApp do The Best Speaker Brasil 2026 (competição de palestrantes). Para CADA atendimento, leia a conversa e produza:
-- "motivo": o MOTIVO REAL do contato em poucas palavras (a causa concreta, não genérica). Prefira reutilizar uma destas categorias quando encaixar: ${CATEGORIAS.join("; ")}. Só crie um rótulo novo (curto, 2-4 palavras, em português) quando NENHUMA servir.
-- "fora_de_escopo": true se o contato não faz sentido para o Max (spam, engano, teste, assunto alheio à competição).
-- "resumo": 1-2 frases explicando o que a pessoa precisava e como terminou (análise objetiva, em português).
-- "resolvido": "sim" (Max resolveu), "parcial" (resolveu em parte ou ficou pendente) ou "nao" (não resolveu / foi escalado sem solução).
-- "sentimento": "positivo", "neutro" ou "negativo" — o tom do cliente ao longo da conversa.
+
+- "motivo": o MOTIVO REAL e ESPECÍFICO do contato, em poucas palavras. Esforce-se para ser preciso; NÃO use "Outros assuntos" a menos que seja realmente impossível identificar. Reutilize uma destas quando encaixar: ${CATEGORIAS.join("; ")}.
+  ATENÇÃO aos casos em que o "cliente" NÃO é uma pessoa fazendo uma pergunta:
+   • Se a mensagem do cliente for uma RESPOSTA AUTOMÁTICA de outro bot/IA, saudação automática de OUTRA empresa, mensagem de ausência ("estou temporariamente ausente"), texto de marketing/broadcast ou recado enlatado → motivo = "Resposta automática de IA".
+   • Número errado / pessoa enganada → "Engano / número errado". Spam/propaganda → "Spam". Teste interno → "Teste interno".
+  Só invente um rótulo novo (curto, 2-4 palavras, em português) quando nenhuma opção acima servir.
+- "fora_de_escopo": true quando NÃO é uma dúvida legítima sobre a competição (inclui os casos especiais acima).
+- "resumo": 1-2 frases explicando o que houve (análise objetiva, em português).
+- "resolvido": "sim" (Max resolveu), "parcial" (em parte/pendente) ou "nao" (não resolveu / escalado sem solução).
+- "sentimento": "positivo", "neutro" ou "negativo".
 
 Responda APENAS com JSON válido (sem markdown):
 {"resultados":[{"i": number, "motivo": "...", "fora_de_escopo": boolean, "resumo": "...", "resolvido": "sim|parcial|nao", "sentimento": "positivo|neutro|negativo"}]}`;
@@ -95,8 +105,18 @@ async function handler(req: Request) {
   const todas = await todasConversas();
   if (!todas.length) return NextResponse.json({ ok: true, classificados: 0, restantes: 0, hubspotAtualizados: 0, aviso: "nenhuma conversa no Redis ainda" });
 
+  // ?refazer=1 reavalia também os já classificados como genéricos ("Outros assuntos" /
+  // "Fora de escopo") — sweep manual; o cron normal (sem o param) só pega os pendentes.
+  const refazer = new URL(req.url).searchParams.get("refazer");
   const atendimentos = agruparAtendimentos(todas);
-  const pendentes = atendimentos.filter(precisaClassificar);
+  let pendentes = atendimentos.filter(precisaClassificar);
+  if (refazer) {
+    const ja = new Set(pendentes.map((a) => a.atendimentoId));
+    const extra = atendimentos.filter(
+      (a) => !ja.has(a.atendimentoId) && GENERICOS.has((a.motivoIA ?? "").trim().toLowerCase())
+    );
+    pendentes = [...pendentes, ...extra];
+  }
   const lote = pendentes.slice(0, BATCH);
 
   if (!lote.length) {
@@ -117,7 +137,9 @@ async function handler(req: Request) {
   lote.forEach((a, i) => {
     const c = result[i];
     if (!c) return;
-    const motivo = c.fora_de_escopo ? "Fora de escopo" : c.motivo;
+    // Usa o rótulo específico da IA (ex.: "Resposta automática de IA"); só cai pra
+    // "Fora de escopo" se a IA marcou fora de escopo mas não deu um rótulo útil.
+    const motivo = c.motivo || (c.fora_de_escopo ? "Fora de escopo" : "Outros assuntos");
     for (const r of a.registros) {
       r.motivoIA = motivo;
       r.resumoIA = c.resumo || motivo; // nunca vazio: evita reprocessar em loop
