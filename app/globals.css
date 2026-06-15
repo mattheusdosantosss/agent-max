@@ -506,12 +506,12 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
    v4 — Atendimentos (mestre-detalhe: contatos + conversa lado a lado)
    ======================================================================== */
 .split{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:stretch}
-@media(max-width:780px){.split{grid-template-columns:1fr}}
+@media(max-width:780px){.split{grid-template-columns:1fr}.mlist{flex:none;max-height:60vh}.detail{min-height:auto}}
 .master{border:1px solid var(--border-soft);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;background:var(--panel-2)}
 .msearch{padding:10px}
 .msearch input{width:100%;background:var(--panel-3);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:8px 11px;font:inherit;font-size:12.5px;outline:none}
 .msearch input:focus{border-color:var(--accent)}
-.mlist{overflow-y:auto;max-height:440px}
+.mlist{flex:1;min-height:0;overflow-y:auto}
 .mlist::-webkit-scrollbar{width:9px}.mlist::-webkit-scrollbar-thumb{background:var(--track);border-radius:9px;border:2px solid var(--panel-2)}
 .crow{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-top:1px solid var(--border-soft);transition:background .12s}
 .crow:first-child{border-top:0}
@@ -556,8 +556,10 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 /* ========================================================================
    v5 — drill-down Principais Dúvidas + Volume por dia
    ======================================================================== */
-.duv{display:grid;grid-template-columns:1.25fr 1fr;gap:18px}
-@media(max-width:780px){.duv{grid-template-columns:1fr}}
+.duv{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;height:440px}
+.duv .bars{height:100%;min-height:0;overflow-y:auto;padding-right:4px}
+.duv .bars::-webkit-scrollbar{width:8px}.duv .bars::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px;border:2px solid var(--panel)}
+@media(max-width:780px){.duv{grid-template-columns:1fr;height:auto}.duv .bars{max-height:320px;height:auto}.plist{flex:none;max-height:320px}}
 .duv .bar-row{cursor:pointer;padding:3px 5px;border-radius:8px;transition:background .12s}
 .duv .bar-row:hover{background:var(--panel-2)}
 .duv .bar-row.sel{background:var(--accent-soft)}
@@ -566,7 +568,7 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .people{border:1px solid var(--border-soft);border-radius:12px;background:var(--panel-2);overflow:hidden;display:flex;flex-direction:column}
 .phead{padding:11px 14px;border-bottom:1px solid var(--border-soft);font-size:13px;color:var(--muted)}
 .phead b{color:var(--accent);font-family:var(--font-mono),monospace}
-.plist{overflow-y:auto;max-height:340px}
+.plist{flex:1;min-height:0;overflow-y:auto}
 .plist::-webkit-scrollbar{width:8px}.plist::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px;border:2px solid var(--panel-2)}
 .prow{display:flex;align-items:center;gap:10px;padding:9px 13px;border-top:1px solid var(--border-soft)}
 .prow:first-child{border-top:0}
