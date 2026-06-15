@@ -69,15 +69,16 @@ async function chamarGemini(o: LLMOpts, modelo: string): Promise<string> {
   for (const m of candidatos) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`;
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-    // 404 = modelo não existe; 429 = cota do free tier estourada nesse modelo.
-    // Em ambos, tenta o próximo candidato (cotas grátis são por modelo).
-    if (res.status === 404 || res.status === 429) { ultimoErro = `${res.status} em ${m}`; continue; }
+    // 404 = modelo não existe; 429 = cota estourada; 5xx (503 = "high demand"/UNAVAILABLE,
+    // 500/502 transitórios) = modelo sobrecarregado. Em todos, tenta o próximo candidato —
+    // os modelos têm cotas e capacidade independentes, então outro costuma estar disponível.
+    if (res.status === 404 || res.status === 429 || res.status >= 500) { ultimoErro = `${res.status} em ${m}`; continue; }
     if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 220)}`);
     const data = await res.json();
     const parts = data.candidates?.[0]?.content?.parts ?? [];
     return parts.map((p: any) => p?.text ?? "").join("").trim();
   }
-  throw new Error(`Gemini sem cota grátis disponível agora (tentei: ${candidatos.join(", ")}). Último: ${ultimoErro}. Aguarde ~1 min (limite por minuto) e tente de novo.`);
+  throw new Error(`Nenhum modelo Gemini disponível agora — cota estourada (429) ou sobrecarga do Google (503). Tentei: ${candidatos.join(", ")}. Último: ${ultimoErro}. Geralmente é temporário; o cron tenta de novo na próxima hora.`);
 }
 
 async function chamarAnthropic(o: LLMOpts, modelo: string): Promise<string> {
