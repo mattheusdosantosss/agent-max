@@ -327,30 +327,49 @@ function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
   return "";
 }
 
-function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { contatos: Contato[]; excluidosTeste: number; conversas: ConvUI[]; atendimentos: AtendUI[] }) {
+function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; excluidosTeste: number }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
+  const [det, setDet] = useState<{ conversas: ConvUI[]; atendimentos: AtendUI[] }>({ conversas: [], atendimentos: [] });
+  const [carregandoConv, setCarregandoConv] = useState(false);
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
   const ufsN = useMemo(() => new Set(contatos.map((c) => c.uf).filter((u) => u !== "—")).size, [contatos]);
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     return contatos.map((c, i) => ({ c, i })).filter(({ c }) => !t || `${c.nome} ${c.email} ${c.telefone} ${c.uf}`.toLowerCase().includes(t));
   }, [contatos, q]);
-  const convById = useMemo(() => { const m = new Map<string, ConvUI>(); for (const c of conversas) m.set(c.id, c); return m; }, [conversas]);
-  if (!contatos.length) return <div className="empty">sem contatos ainda — ligue o HubSpot</div>;
-  const cur = Math.min(sel, contatos.length - 1);
-  const selC = contatos[cur];
-  const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
-  // Atendimentos do contato (cada um = uma "ida" ao Max, janela de 24h), do mais antigo p/ o recente.
+  const cur = Math.min(sel, Math.max(0, contatos.length - 1));
+  const selC: Contato | null = contatos[cur] ?? null;
+
+  // Busca a conversa do contato selecionado SOB DEMANDA (filtra o conjunto completo no
+  // Redis), pra funcionar com contatos antigos que estão fora das 500 conversas recentes.
+  useEffect(() => {
+    if (!selC) return;
+    let vivo = true;
+    setCarregandoConv(true);
+    const p = new URLSearchParams();
+    if (selC.id) p.set("contactId", selC.id);
+    const wpp = selC.whatsapp || selC.telefone;
+    if (wpp) p.set("whatsapp", wpp);
+    fetch(`/api/conversas?${p.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { conversas: [], atendimentos: [] }))
+      .then((j) => { if (vivo) setDet({ conversas: j.conversas || [], atendimentos: j.atendimentos || [] }); })
+      .catch(() => { if (vivo) setDet({ conversas: [], atendimentos: [] }); })
+      .finally(() => { if (vivo) setCarregandoConv(false); });
+    return () => { vivo = false; };
+  }, [selC?.id, selC?.whatsapp, selC?.telefone]);
+
+  const convById = useMemo(() => { const m = new Map<string, ConvUI>(); for (const c of det.conversas) m.set(c.id, c); return m; }, [det.conversas]);
   const meusAtends = useMemo(() => {
-    return atendimentos
-      .filter((a) => casaAtend(a, selC))
+    return det.atendimentos
       .map((a) => ({ ...a, trocas: a.ids.map((id) => convById.get(id)).filter((cv): cv is ConvUI => !!cv && (!!cv.pergunta || !!cv.resposta)).sort((x, y) => x.ts - y.ts) }))
       .filter((a) => a.trocas.length)
       .sort((a, b) => a.inicio - b.inicio);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [atendimentos, convById, selC.id, selC.telefone, selC.whatsapp]);
+  }, [det.atendimentos, convById]);
   const totalTrocas = meusAtends.reduce((s, a) => s + a.trocas.length, 0);
+
+  if (!contatos.length || !selC) return <div className="empty">sem contatos ainda — ligue o HubSpot</div>;
+  const regiao = selC.uf !== "—" ? (UF_TO_REGION[selC.uf] || "—") : "—";
   return (
     <>
       <div className="summ">
@@ -389,7 +408,9 @@ function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { c
           </div>
           <div className="conv">
             <div className="conv-h">Conversa{meusAtends.length ? <span className="conv-n">{meusAtends.length} atendimento(s) · {totalTrocas} troca(s)</span> : null}</div>
-            {meusAtends.length ? (
+            {carregandoConv ? (
+              <div className="conv-empty">carregando conversa…</div>
+            ) : meusAtends.length ? (
               <div className="thread">
                 {meusAtends.map((a) => (
                   <div className="atend" key={a.atendimentoId}>
@@ -411,10 +432,8 @@ function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { c
               </div>
             ) : (
               <div className="conv-empty">
-                Sem conversa vinculada a este contato ainda.
-                {conversas.length > 0
-                  ? ` Há ${conversas.length} conversa(s) capturada(s) no Redis, mas falta o ingest enviar o contactId (ou o whatsapp) pra amarrar ao contato.`
-                  : " Nenhuma conversa capturada ainda — verifique se o nó HTTP do ingest está disparando."}
+                Nenhuma conversa deste contato encontrada no Redis. Pode ser que o ingest não tenha
+                disparado nesse atendimento, ou que o contactId/WhatsApp não tenha sido enviado pra amarrar.
               </div>
             )}
           </div>
@@ -426,12 +445,13 @@ function Atendimentos({ contatos, excluidosTeste, conversas, atendimentos }: { c
 
 export default function Dashboard({ initial }: { initial: Metrics }) {
   const [m, setM] = useState<Metrics>(initial);
-  const [convs, setConvs] = useState<ConvUI[]>([]);
   const [atends, setAtends] = useState<AtendUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   function toggleTheme() { const t = theme === "dark" ? "light" : "dark"; setTheme(t); document.documentElement.setAttribute("data-theme", t); }
-  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setConvs(j.conversas || []); setAtends(j.atendimentos || []); } } catch {} }
+  // Carrega o resumo das 500 conversas recentes só p/ o override de motivo da IA em
+  // "Principais Dúvidas". A conversa de cada contato é buscada sob demanda na aba Atendimentos.
+  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setAtends(j.atendimentos || []); } } catch {} }
 
   // Contatos com o motivo enriquecido pela IA (quando há atendimento classificado),
   // caindo no motivo cru do HubSpot enquanto a classificação não chegou.
@@ -509,7 +529,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
         <AnaliseMax />
-        <Atendimentos contatos={contatosIA} excluidosTeste={m.excluidosTeste} conversas={convs} atendimentos={atends} />
+        <Atendimentos contatos={contatosIA} excluidosTeste={m.excluidosTeste} />
       </section>
 
       <section className="card">
