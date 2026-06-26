@@ -45,7 +45,19 @@ export async function GET(req: Request) {
   const qContact = (url.searchParams.get("contactId") || "").trim();
   const qWhats = (url.searchParams.get("whatsapp") || "").trim();
   const qDay = (url.searchParams.get("day") || "").trim(); // YYYY-MM-DD (horário de Brasília)
+  const q = (url.searchParams.get("q") || "").trim().toLowerCase(); // busca por texto
   try {
+    if (q) {
+      const todas = await todasConversas();
+      const arr = todas.filter(
+        (c) =>
+          (c.pergunta || "").toLowerCase().includes(q) ||
+          (c.resposta || "").toLowerCase().includes(q) ||
+          (c.nome || "").toLowerCase().includes(q)
+      );
+      arr.sort((a, b) => b.ts - a.ts);
+      return NextResponse.json({ q, total: arr.length, conversas: arr.slice(0, 100).map(mapConv) });
+    }
     if (qDay) {
       const slim = url.searchParams.get("slim") === "1"; // só atendimentos (sem texto cru)
       const start = Date.parse(`${qDay}T00:00:00-03:00`);
