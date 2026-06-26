@@ -47,14 +47,17 @@ export async function GET(req: Request) {
   const qDay = (url.searchParams.get("day") || "").trim(); // YYYY-MM-DD (horário de Brasília)
   try {
     if (qDay) {
+      const slim = url.searchParams.get("slim") === "1"; // só atendimentos (sem texto cru)
       const start = Date.parse(`${qDay}T00:00:00-03:00`);
       if (Number.isFinite(start)) {
         const end = start + 24 * 60 * 60 * 1000;
         const todas = await todasConversas();
         const atends = agruparAtendimentos(todas).filter((a) => a.inicio >= start && a.inicio < end);
+        const atendimentos = atends.map(mapAtend);
+        if (slim) return NextResponse.json({ day: qDay, total: atends.length, atendimentos });
         const idset = new Set(atends.flatMap((a) => a.registros.map((r) => r.id)));
         const conversas = todas.filter((c) => idset.has(c.id)).map(mapConv);
-        return NextResponse.json({ day: qDay, conversas, atendimentos: atends.map(mapAtend), total: atends.length });
+        return NextResponse.json({ day: qDay, total: atends.length, atendimentos, conversas });
       }
     }
     if (qContact || qWhats) {
