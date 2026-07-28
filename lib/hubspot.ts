@@ -43,7 +43,7 @@ async function buscarInteracoes(): Promise<HsContact[]> {
     const res = await fetch(`${BASE}/crm/v3/objects/contacts/search`, {
       method: "POST", headers: headers(), body: JSON.stringify(body), cache: "no-store",
     });
-    if (!res.ok) throw new Error(`HubSpot search ${res.status}`);
+    if (!res.ok) throw new Error(`HubSpot search ${res.status}: ${(await res.text()).slice(0, 400)}`);
     const data = await res.json();
     out.push(...(data.results ?? []));
     after = data.paging?.next?.after;
