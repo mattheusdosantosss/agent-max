@@ -3,6 +3,8 @@ import type { TopicCount, DayCount, RegiaoCount, Contato } from "./types";
 
 const BASE = "https://api.hubapi.com";
 
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
 type HsContact = { id?: string; properties: Record<string, string | null> };
 
 function headers() {
@@ -40,14 +42,25 @@ async function buscarInteracoes(): Promise<HsContact[]> {
       limit: 100,
     };
     if (after) body.after = after;
-    const res = await fetch(`${BASE}/crm/v3/objects/contacts/search`, {
-      method: "POST", headers: headers(), body: JSON.stringify(body), cache: "no-store",
-    });
+    // O search do HubSpot tem limite "secondly" (poucas req/s). Com muitos contatos a
+    // paginação rápida estourava (429) e a página caía no seed. Retry com backoff no 429
+    // + pausa entre páginas pra respeitar o limite.
+    let res: Response;
+    let tentativa = 0;
+    while (true) {
+      res = await fetch(`${BASE}/crm/v3/objects/contacts/search`, {
+        method: "POST", headers: headers(), body: JSON.stringify(body), cache: "no-store",
+      });
+      if (res.status !== 429) break;
+      if (++tentativa > 5) break;
+      await sleep(700 * tentativa); // backoff progressivo no rate limit
+    }
     if (!res.ok) throw new Error(`HubSpot search ${res.status}: ${(await res.text()).slice(0, 400)}`);
     const data = await res.json();
     out.push(...(data.results ?? []));
     after = data.paging?.next?.after;
     if (!after) break;
+    await sleep(220); // ~4 req/s: fica abaixo do limite secondly do search
   }
   return out;
 }
