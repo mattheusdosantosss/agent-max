@@ -336,10 +336,33 @@ function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
   return "";
 }
 
+/* ---------------- Motivos de Contato (feed das análises da IA por atendimento) ---------------- */
+function MotivosContato({ lista }: { lista: AtendUI[] }) {
+  if (!lista.length) return <div className="empty">sem análises da IA ainda</div>;
+  return (
+    <div className="mcscroll">
+      {lista.map((a) => (
+        <div className="mcrow" key={a.atendimentoId}>
+          <div className="av">{iniciais(a.nome || "?")}</div>
+          <div className="mcmain">
+            <div className="mchead">
+              <span className="mcnome">{a.nome || "(sem nome)"}</span>
+              {a.motivoIA && <span className="atend-motivo">{a.motivoIA}</span>}
+              <span className="mcdata">{dataCurta(new Date(a.inicio).toISOString())}</span>
+            </div>
+            <div className="mcresumo">{a.resumoIA}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Atendimentos({ contatos, excluidosTeste, atends }: { contatos: Contato[]; excluidosTeste: number; atends: AtendUI[] }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
-  const [periodo, setPeriodo] = useState<"tudo" | "hoje" | "ontem" | "7d" | "30d">("tudo");
+  const [periodo, setPeriodo] = useState<"tudo" | "hoje" | "ontem" | "7d" | "30d" | "mes">("tudo");
+  const [dataEsp, setDataEsp] = useState("");
   const [det, setDet] = useState<{ conversas: ConvUI[]; atendimentos: AtendUI[] }>({ conversas: [], atendimentos: [] });
   const [carregandoConv, setCarregandoConv] = useState(false);
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
@@ -362,15 +385,18 @@ function Atendimentos({ contatos, excluidosTeste, atends }: { contatos: Contato[
     return ts || Date.parse(c.criadoEm) || 0;
   }
   const corte = useMemo(() => {
-    if (periodo === "tudo") return null;
-    const agora = new Date();
-    const hojeIni = new Date(agora.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" })).getTime();
     const dia = 86400000;
-    if (periodo === "hoje") return { de: hojeIni, ate: Infinity };
+    if (dataEsp) { const s = Date.parse(dataEsp + "T00:00:00-03:00"); return Number.isFinite(s) ? { de: s, ate: s + dia } : null; }
+    if (periodo === "tudo") return null;
+    const hojeStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); // YYYY-MM-DD BRT
+    const hojeIni = Date.parse(hojeStr + "T00:00:00-03:00");
+    if (periodo === "hoje") return { de: hojeIni, ate: hojeIni + dia };
     if (periodo === "ontem") return { de: hojeIni - dia, ate: hojeIni };
     if (periodo === "7d") return { de: hojeIni - 6 * dia, ate: Infinity };
-    return { de: hojeIni - 29 * dia, ate: Infinity };
-  }, [periodo]);
+    if (periodo === "30d") return { de: hojeIni - 29 * dia, ate: Infinity };
+    if (periodo === "mes") { const s = Date.parse(hojeStr.slice(0, 7) + "-01T00:00:00-03:00"); return { de: s, ate: Infinity }; }
+    return null;
+  }, [periodo, dataEsp]);
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     return contatos.map((c, i) => ({ c, i })).filter(({ c }) => {
@@ -424,9 +450,11 @@ function Atendimentos({ contatos, excluidosTeste, atends }: { contatos: Contato[
         <div className="master">
           <div className="msearch"><input placeholder="buscar contato…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="mfilter">
-            {([["tudo", "Tudo"], ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "7 dias"], ["30d", "30 dias"]] as const).map(([k, lbl]) => (
-              <button key={k} className={periodo === k ? "on" : ""} onClick={() => setPeriodo(k)}>{lbl}</button>
+            {([["tudo", "Tudo"], ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "7 dias"], ["30d", "30 dias"], ["mes", "Este mês"]] as const).map(([k, lbl]) => (
+              <button key={k} className={!dataEsp && periodo === k ? "on" : ""} onClick={() => { setPeriodo(k); setDataEsp(""); }}>{lbl}</button>
             ))}
+            <input type="date" className={`mdate ${dataEsp ? "on" : ""}`} value={dataEsp} onChange={(e) => setDataEsp(e.target.value)} title="data específica" />
+            {dataEsp && <button className="mdate-clear" onClick={() => setDataEsp("")} title="limpar data">×</button>}
           </div>
           <div className="mlist">
             {filtrados.map(({ c, i }) => (
@@ -525,9 +553,10 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       if (seen.has(chave)) continue;
       seen.add(chave);
       if ((a.contactId && has.has("id:" + a.contactId)) || (tail && has.has("wa:" + tail))) continue; // já está no HubSpot
+      if (!(a.nome || "").trim()) continue; // "(sem nome)" fora da listagem
       extra.push({
         id: a.contactId || `wa:${tail || a.atendimentoId}`,
-        nome: a.nome || "(sem nome)",
+        nome: a.nome,
         email: "",
         telefone: a.whatsapp || "",
         whatsapp: a.whatsapp || "",
@@ -540,12 +569,10 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
     return extra.length ? [...contatosIA, ...extra] : contatosIA;
   }, [contatosIA, atends]);
 
-  // Motivos de contato agregados da classificação da IA (por atendimento, do Redis).
-  const motivosContato = useMemo(() => {
-    const mm = new Map<string, number>();
-    for (const a of atends) { const mo = (a.motivoIA || "").trim(); if (mo) mm.set(mo, (mm.get(mo) ?? 0) + 1); }
-    return [...mm.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
-  }, [atends]);
+  // Atendimentos com nome (exclui "(sem nome)") — base da lista, do volume e das análises.
+  const atendsNomeados = useMemo(() => atends.filter((a) => (a.nome || "").trim()), [atends]);
+  // Feed das análises da IA (resumo por atendimento), mais recentes primeiro.
+  const atendsResumo = useMemo(() => atendsNomeados.filter((a) => (a.resumoIA || "").trim()).slice(0, 250), [atendsNomeados]);
 
   async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); await carregarConversas(); } finally { setLoading(false); } }
 
@@ -599,13 +626,13 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Volume por dia</div><div className="cap">atendimentos que o Max registrou · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">no banco</div><div className="rnum">{fmt(atends.length)}</div></div></div>
-        <VolumePorDia atends={atends} />
+        <div className="card-head"><div><div className="title">Volume por dia</div><div className="cap">atendimentos identificados por dia · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">no banco</div><div className="rnum">{fmt(atendsNomeados.length)}</div></div></div>
+        <VolumePorDia atends={atendsNomeados} />
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Motivos de Contato</div><div className="cap">classificação da IA por atendimento · sempre atualizado · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">atendimentos</div><div className="rnum">{fmt(atends.length)}</div></div></div>
-        {motivosContato.length ? <div className="barscroll big"><Bars data={motivosContato} /></div> : <div className="empty">sem atendimentos classificados ainda</div>}
+        <div className="card-head"><div><div className="title">Motivos de Contato</div><div className="cap">o que a IA entendeu de cada atendimento · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">análises</div><div className="rnum">{fmt(atendsResumo.length)}</div></div></div>
+        <MotivosContato lista={atendsResumo} />
       </section>
 
       <section className="card">
