@@ -539,6 +539,14 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
     }
     return extra.length ? [...contatosIA, ...extra] : contatosIA;
   }, [contatosIA, atends]);
+
+  // Motivos de contato agregados da classificação da IA (por atendimento, do Redis).
+  const motivosContato = useMemo(() => {
+    const mm = new Map<string, number>();
+    for (const a of atends) { const mo = (a.motivoIA || "").trim(); if (mo) mm.set(mo, (mm.get(mo) ?? 0) + 1); }
+    return [...mm.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  }, [atends]);
+
   async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); await carregarConversas(); } finally { setLoading(false); } }
 
   // Aquece o cache no primeiro acesso: se o volume do n8n não veio (cache vazio),
@@ -595,16 +603,10 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
         <VolumePorDia atends={atends} />
       </section>
 
-      <div className="grid2">
-        <section className="card">
-          <div className="card-head"><div><div className="title">Escalações no Tempo</div><div className="cap">por dia · <span className="chip">data_de_escalacao</span></div></div><div className="right"><div className="rlab">total</div><div className="rnum">{fmt(m.escaladas)}</div></div></div>
-          <Cols data={m.escalacoesPorDia} />
-        </section>
-        <section className="card">
-          <div className="card-head"><div><div className="title">Motivos da Escalação</div><div className="cap">por que foi pra humano · <span className="chip">motivo_da_escalacao</span></div></div><div className="right"><div className="rlab">motivos</div><div className="rnum">{m.motivosEscalacao.length}</div></div></div>
-          <div className="barscroll"><Bars data={m.motivosEscalacao} /></div>
-        </section>
-      </div>
+      <section className="card">
+        <div className="card-head"><div><div className="title">Motivos de Contato</div><div className="cap">classificação da IA por atendimento · sempre atualizado · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">atendimentos</div><div className="rnum">{fmt(atends.length)}</div></div></div>
+        {motivosContato.length ? <div className="barscroll big"><Bars data={motivosContato} /></div> : <div className="empty">sem atendimentos classificados ainda</div>}
+      </section>
 
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>

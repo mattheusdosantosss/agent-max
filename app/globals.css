@@ -670,6 +670,7 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .an-mini-nota{font-family:var(--font-mono),monospace;font-size:20px;font-weight:700;color:var(--accent)}
 .an-mini-verdict{font-size:13px;color:var(--text);font-weight:500}
 .barscroll{max-height:280px;overflow-y:auto;padding-right:4px}
+.barscroll.big{max-height:440px}
 .barscroll::-webkit-scrollbar{width:8px}.barscroll::-webkit-scrollbar-thumb{background:var(--track);border-radius:8px;border:2px solid var(--panel)}
 
 /* ========================================================================
