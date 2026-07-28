@@ -449,9 +449,9 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
   const [loading, setLoading] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   function toggleTheme() { const t = theme === "dark" ? "light" : "dark"; setTheme(t); document.documentElement.setAttribute("data-theme", t); }
-  // Carrega o resumo das 500 conversas recentes só p/ o override de motivo da IA em
-  // "Principais Dúvidas". A conversa de cada contato é buscada sob demanda na aba Atendimentos.
-  async function carregarConversas() { try { const r = await fetch("/api/conversas", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setAtends(j.atendimentos || []); } } catch {} }
+  // Carrega TODOS os atendimentos do Redis (não só os recentes) — alimenta o override de
+  // motivo em "Principais Dúvidas" e a lista completa da aba Atendimentos.
+  async function carregarConversas() { try { const r = await fetch("/api/atendimentos", { cache: "no-store" }); if (r.ok) { const j = await r.json(); setAtends(j.atendimentos || []); } } catch {} }
 
   // Contatos com o motivo enriquecido pela IA (quando há atendimento classificado),
   // caindo no motivo cru do HubSpot enquanto a classificação não chegou.
@@ -459,6 +459,39 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
     () => m.contatos.map((c) => { const mi = motivoIAdeContato(c, atends); return mi ? { ...c, motivo: mi } : c; }),
     [m.contatos, atends]
   );
+
+  // Lista COMPLETA de atendimentos: contatos do HubSpot + os que só existem no Redis
+  // (falaram com o Max mas não casam com nenhum contato do HubSpot). Assim nenhuma
+  // troca fica de fora da aba Atendimentos — independente do HubSpot.
+  const contatosCompletos = useMemo(() => {
+    const has = new Set<string>();
+    for (const c of contatosIA) {
+      if (c.id) has.add("id:" + c.id);
+      const t1 = digitsTail(c.telefone); if (t1) has.add("wa:" + t1);
+      const t2 = digitsTail(c.whatsapp); if (t2) has.add("wa:" + t2);
+    }
+    const seen = new Set<string>();
+    const extra: Contato[] = [];
+    for (const a of atends) { // atends vêm do mais recente pro mais antigo
+      const tail = digitsTail(a.whatsapp);
+      const chave = a.contactId ? "id:" + a.contactId : (tail ? "wa:" + tail : "at:" + a.atendimentoId);
+      if (seen.has(chave)) continue;
+      seen.add(chave);
+      if ((a.contactId && has.has("id:" + a.contactId)) || (tail && has.has("wa:" + tail))) continue; // já está no HubSpot
+      extra.push({
+        id: a.contactId || `wa:${tail || a.atendimentoId}`,
+        nome: a.nome || "(sem nome)",
+        email: "",
+        telefone: a.whatsapp || "",
+        whatsapp: a.whatsapp || "",
+        motivo: a.motivoIA || "—",
+        escalou: false,
+        uf: "—",
+        criadoEm: new Date(a.inicio).toISOString(),
+      });
+    }
+    return extra.length ? [...contatosIA, ...extra] : contatosIA;
+  }, [contatosIA, atends]);
   async function atualizar() { setLoading(true); try { const r = await fetch("/api/metrics", { cache: "no-store" }); if (r.ok) setM(await r.json()); await carregarConversas(); } finally { setLoading(false); } }
 
   // Aquece o cache no primeiro acesso: se o volume do n8n não veio (cache vazio),
@@ -529,7 +562,7 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
         <AnaliseMax />
-        <Atendimentos contatos={contatosIA} excluidosTeste={m.excluidosTeste} />
+        <Atendimentos contatos={contatosCompletos} excluidosTeste={m.excluidosTeste} />
       </section>
 
       <section className="card">
