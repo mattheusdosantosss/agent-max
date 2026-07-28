@@ -221,6 +221,7 @@ function AnaliseMax() {
   const [gerando, setGerando] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+  const [aberto, setAberto] = useState(false); // minimizada por padrão
 
   async function gerar() {
     setGerando(true); setErro("");
@@ -263,21 +264,31 @@ function AnaliseMax() {
             {gerando && <> · <span className="an-live">atualizando…</span></>}
           </div>
         </div>
-        {analise && !gerando && (
-          <button className="an-link" onClick={gerar} title="Gerar agora">↻ atualizar</button>
-        )}
+        <div className="an-actions">
+          {analise && !gerando && aberto && (
+            <button className="an-link" onClick={gerar} title="Gerar agora">↻ atualizar</button>
+          )}
+          <button className="an-link" onClick={() => setAberto((v) => !v)}>{aberto ? "▾ minimizar" : "▸ expandir"}</button>
+        </div>
       </div>
 
-      {(carregando || (gerando && semAnalise)) && (
+      {!aberto && analise && (
+        <div className="an-mini" onClick={() => setAberto(true)}>
+          <span className="an-mini-nota">{typeof analise.nota === "number" ? analise.nota.toLocaleString("pt-BR") : "—"}</span>
+          <span className="an-mini-verdict">{analise.verdict}</span>
+        </div>
+      )}
+
+      {aberto && (carregando || (gerando && semAnalise)) && (
         <div className="an-load">
           <div className="an-skel" style={{ width: "62%" }} /><div className="an-skel" style={{ width: "92%" }} /><div className="an-skel" style={{ width: "78%" }} /><div className="an-skel" style={{ width: "70%" }} />
           <div className="an-foot">{gerando ? "Lendo conversas e métricas e analisando…" : "Carregando última análise…"}</div>
         </div>
       )}
 
-      {erro && semAnalise && <div className="an-erro">{erro}</div>}
+      {aberto && erro && semAnalise && <div className="an-erro">{erro}</div>}
 
-      {analise && (
+      {aberto && analise && (
         <div className="an-result" style={gerando ? { opacity: 0.55 } : undefined}>
           <div className="an-score">
             <div><div className="an-big">{typeof analise.nota === "number" ? analise.nota.toLocaleString("pt-BR") : "—"}</div><div className="an-label">nota geral</div></div>
@@ -325,17 +336,50 @@ function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
   return "";
 }
 
-function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; excluidosTeste: number }) {
+function Atendimentos({ contatos, excluidosTeste, atends }: { contatos: Contato[]; excluidosTeste: number; atends: AtendUI[] }) {
   const [sel, setSel] = useState(0);
   const [q, setQ] = useState("");
+  const [periodo, setPeriodo] = useState<"tudo" | "hoje" | "ontem" | "7d" | "30d">("tudo");
   const [det, setDet] = useState<{ conversas: ConvUI[]; atendimentos: AtendUI[] }>({ conversas: [], atendimentos: [] });
   const [carregandoConv, setCarregandoConv] = useState(false);
   const escaladosN = useMemo(() => contatos.filter((c) => c.escalou).length, [contatos]);
   const ufsN = useMemo(() => new Set(contatos.map((c) => c.uf).filter((u) => u !== "—")).size, [contatos]);
+
+  // Última atividade por contato (do Redis) p/ o filtro de tempo — key por contactId e por final do WhatsApp.
+  const ultimaAtiv = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of atends) {
+      if (a.contactId) { const k = "id:" + a.contactId; if (a.inicio > (m.get(k) ?? 0)) m.set(k, a.inicio); }
+      const tail = digitsTail(a.whatsapp); if (tail) { const k = "wa:" + tail; if (a.inicio > (m.get(k) ?? 0)) m.set(k, a.inicio); }
+    }
+    return m;
+  }, [atends]);
+  function ativoDe(c: Contato): number {
+    const byId = c.id ? ultimaAtiv.get("id:" + c.id) : undefined;
+    const t1 = digitsTail(c.telefone), t2 = digitsTail(c.whatsapp);
+    const byWa = Math.max(t1 ? (ultimaAtiv.get("wa:" + t1) ?? 0) : 0, t2 ? (ultimaAtiv.get("wa:" + t2) ?? 0) : 0);
+    const ts = Math.max(byId ?? 0, byWa);
+    return ts || Date.parse(c.criadoEm) || 0;
+  }
+  const corte = useMemo(() => {
+    if (periodo === "tudo") return null;
+    const agora = new Date();
+    const hojeIni = new Date(agora.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" })).getTime();
+    const dia = 86400000;
+    if (periodo === "hoje") return { de: hojeIni, ate: Infinity };
+    if (periodo === "ontem") return { de: hojeIni - dia, ate: hojeIni };
+    if (periodo === "7d") return { de: hojeIni - 6 * dia, ate: Infinity };
+    return { de: hojeIni - 29 * dia, ate: Infinity };
+  }, [periodo]);
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return contatos.map((c, i) => ({ c, i })).filter(({ c }) => !t || `${c.nome} ${c.email} ${c.telefone} ${c.uf}`.toLowerCase().includes(t));
-  }, [contatos, q]);
+    return contatos.map((c, i) => ({ c, i })).filter(({ c }) => {
+      if (t && !`${c.nome} ${c.email} ${c.telefone} ${c.uf}`.toLowerCase().includes(t)) return false;
+      if (corte) { const ts = ativoDe(c); if (!(ts >= corte.de && ts < corte.ate)) return false; }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contatos, q, corte, ultimaAtiv]);
   const cur = Math.min(sel, Math.max(0, contatos.length - 1));
   const selC: Contato | null = contatos[cur] ?? null;
 
@@ -379,6 +423,11 @@ function Atendimentos({ contatos, excluidosTeste }: { contatos: Contato[]; exclu
       <div className="split">
         <div className="master">
           <div className="msearch"><input placeholder="buscar contato…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="mfilter">
+            {([["tudo", "Tudo"], ["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "7 dias"], ["30d", "30 dias"]] as const).map(([k, lbl]) => (
+              <button key={k} className={periodo === k ? "on" : ""} onClick={() => setPeriodo(k)}>{lbl}</button>
+            ))}
+          </div>
           <div className="mlist">
             {filtrados.map(({ c, i }) => (
               <div className={`crow ${i === cur ? "sel" : ""}`} key={c.id || c.email || i} onClick={() => setSel(i)}>
@@ -552,15 +601,15 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
           <Cols data={m.escalacoesPorDia} />
         </section>
         <section className="card">
-          <div className="card-head"><div><div className="title">Motivos da Escalação</div><div className="cap">por que foi pra humano · <span className="chip">motivo_da_escalacao</span></div></div></div>
-          <Bars data={m.motivosEscalacao} />
+          <div className="card-head"><div><div className="title">Motivos da Escalação</div><div className="cap">por que foi pra humano · <span className="chip">motivo_da_escalacao</span></div></div><div className="right"><div className="rlab">motivos</div><div className="rnum">{m.motivosEscalacao.length}</div></div></div>
+          <div className="barscroll"><Bars data={m.motivosEscalacao} /></div>
         </section>
       </div>
 
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
         <AnaliseMax />
-        <Atendimentos contatos={contatosCompletos} excluidosTeste={m.excluidosTeste} />
+        <Atendimentos contatos={contatosCompletos} excluidosTeste={m.excluidosTeste} atends={atends} />
       </section>
 
       <section className="card">
