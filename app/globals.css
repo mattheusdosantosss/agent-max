@@ -523,6 +523,18 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .mcnome{font-weight:600;font-size:13px}
 .mcdata{font-family:var(--font-mono),monospace;font-size:10px;color:var(--faint);margin-left:auto}
 .mcresumo{font-size:12.5px;color:var(--muted);line-height:1.5}
+.mcrow.click{cursor:pointer;border-radius:8px}
+.mcrow.click:hover{background:var(--panel-2)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;width:100%;max-width:740px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-soft);flex-shrink:0}
+.modal-title{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+.modal-title b{font-size:15px}
+.modal-sub{font-size:11.5px;color:var(--faint);font-family:var(--font-mono),monospace}
+.modal-body{overflow-y:auto;padding:12px 16px;min-height:0}
+.modal-body.mcscroll{max-height:none}
+.modal-body.thread{display:flex;flex-direction:column;gap:10px}
+.modal-body::-webkit-scrollbar{width:9px}.modal-body::-webkit-scrollbar-thumb{background:var(--track);border-radius:9px;border:2px solid var(--panel)}
 @media(max-width:780px){.split{grid-template-columns:1fr;height:auto}.master{height:auto}.mlist{flex:none;max-height:60vh}.detail{height:auto;overflow:visible}.detail .conv{flex:none;overflow:visible}.detail .thread{flex:none;max-height:420px}}
 .master{border:1px solid var(--border-soft);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;background:var(--panel-2)}
 .msearch{padding:10px}

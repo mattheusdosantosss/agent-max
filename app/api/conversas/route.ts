@@ -46,7 +46,14 @@ export async function GET(req: Request) {
   const qWhats = (url.searchParams.get("whatsapp") || "").trim();
   const qDay = (url.searchParams.get("day") || "").trim(); // YYYY-MM-DD (horário de Brasília)
   const q = (url.searchParams.get("q") || "").trim().toLowerCase(); // busca por texto
+  const qIds = (url.searchParams.get("ids") || "").split(",").map((s) => s.trim()).filter(Boolean);
   try {
+    if (qIds.length) {
+      const todas = await todasConversas();
+      const set = new Set(qIds);
+      const conversas = todas.filter((c) => set.has(c.id)).sort((a, b) => a.ts - b.ts).map(mapConv);
+      return NextResponse.json({ conversas, atendimentos: [], total: conversas.length });
+    }
     if (q) {
       const todas = await todasConversas();
       const arr = todas.filter(

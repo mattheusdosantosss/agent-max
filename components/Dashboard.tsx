@@ -336,6 +336,108 @@ function motivoIAdeContato(c: Contato, atends: AtendUI[]): string {
   return "";
 }
 
+/* ---------------- Tópicos (agrupa as análises da IA em temas claros) ---------------- */
+function semAcentoLC(s: string) { return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+function topicoDe(motivo: string, resumo: string): string {
+  const s = semAcentoLC(motivo + " " + resumo);
+  if (/resposta automatica|mensagem automatica|fora do expediente|ausente|no momento nao|saudacao automatica|assistente virtual|\bbot\b/.test(s)) return "Resposta automática / bot";
+  if (/engano|numero errado|pessoa errada|nao reconhec|nao conhec/.test(s)) return "Engano / número errado";
+  if (/\bspam\b|propaganda|oferta de servico|divulga/.test(s)) return "Spam / divulgação";
+  if (/teste interno/.test(s)) return "Teste interno";
+  if (/video/.test(s)) return "Vídeo de palestra";
+  if (/pagament|cobran|\bvalor\b|pagar|\bpreco\b|gratuit/.test(s)) return "Pagamento / cobrança";
+  if (/vota|voto/.test(s)) return "Votação";
+  if (/plataforma|login|acess|cadastr|codigo de valida|navegador|\bsite\b|\bperfil\b/.test(s)) return "Uso da plataforma";
+  if (/inscri|elegib|idade|requisit|participar da|como participar/.test(s)) return "Inscrição";
+  if (/reclama|suporte|atendimento humano|falar com atend|problema tecnic/.test(s)) return "Reclamação / suporte";
+  if (/etapa|regulament|premi|formato|reality|\bfinal\b|competic|funcionament|prazo|\bdata|horario|criterio|informac/.test(s)) return "Dúvidas sobre a competição";
+  if (/saudac|agradec|obrigad|reacao|emoji/.test(s)) return "Saudação / sem dúvida";
+  return "Outros";
+}
+
+function TopicoModal({ topico, lista, onClose }: { topico: string; lista: AtendUI[]; onClose: () => void }) {
+  const [sel, setSel] = useState<AtendUI | null>(null);
+  const [thread, setThread] = useState<ConvUI[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  useEffect(() => {
+    if (!sel) { setThread([]); return; }
+    let vivo = true; setCarregando(true);
+    const p = new URLSearchParams();
+    if (sel.ids?.length) p.set("ids", sel.ids.join(","));
+    else { if (sel.contactId) p.set("contactId", sel.contactId); if (sel.whatsapp) p.set("whatsapp", sel.whatsapp); }
+    fetch(`/api/conversas?${p.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { conversas: [] }))
+      .then((j) => { if (vivo) setThread((j.conversas || []).slice().sort((a: ConvUI, b: ConvUI) => a.ts - b.ts)); })
+      .catch(() => { if (vivo) setThread([]); })
+      .finally(() => { if (vivo) setCarregando(false); });
+    return () => { vivo = false; };
+  }, [sel]);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">
+            {sel && <button className="an-link" onClick={() => setSel(null)}>← voltar</button>}
+            <b>{sel ? (sel.nome || "(sem nome)") : topico}</b>
+            <span className="modal-sub">{sel ? (sel.whatsapp || "") : `${lista.length} atendimento(s)`}</span>
+          </div>
+          <button className="an-link" onClick={onClose}>✕</button>
+        </div>
+        {!sel ? (
+          <div className="modal-body mcscroll">
+            {lista.map((a) => (
+              <div className="mcrow click" key={a.atendimentoId} onClick={() => setSel(a)}>
+                <div className="av">{iniciais(a.nome || "?")}</div>
+                <div className="mcmain">
+                  <div className="mchead"><span className="mcnome">{a.nome || "(sem nome)"}</span>{a.motivoIA && <span className="atend-motivo">{a.motivoIA}</span>}<span className="mcdata">{dataCurta(new Date(a.inicio).toISOString())}</span></div>
+                  <div className="mcresumo">{a.resumoIA}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="modal-body thread">
+            {carregando ? <div className="conv-empty">carregando conversa…</div> : thread.length ? thread.map((cv) => (
+              <div className="exch" key={cv.id}>
+                {cv.pergunta ? <div className="bubble user"><div className="brole">Cliente</div><div className="btext">{cv.pergunta}</div></div> : null}
+                {cv.resposta ? <div className="bubble bot"><div className="brole">Max</div><div className="btext">{cv.resposta}</div></div> : null}
+              </div>
+            )) : <div className="conv-empty">conversa não encontrada no banco.</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PrincipaisTopicos({ atends }: { atends: AtendUI[] }) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  const grupos = useMemo(() => {
+    const m = new Map<string, AtendUI[]>();
+    for (const a of atends) { const t = topicoDe(a.motivoIA || "", a.resumoIA || ""); if (!m.has(t)) m.set(t, []); m.get(t)!.push(a); }
+    return [...m.entries()].map(([topico, l]) => ({ topico, lista: l.slice().sort((x, y) => y.inicio - x.inicio) })).sort((a, b) => b.lista.length - a.lista.length);
+  }, [atends]);
+  if (!grupos.length) return <div className="empty">sem análises da IA ainda</div>;
+  const max = Math.max(1, ...grupos.map((g) => g.lista.length));
+  const total = atends.length || 1;
+  const sel = grupos.find((g) => g.topico === aberto) || null;
+  return (
+    <>
+      <div className="bars">
+        {grupos.map((g) => (
+          <div className="bar-row click" key={g.topico} onClick={() => setAberto(g.topico)}>
+            <div className="bl">{g.topico}</div>
+            <div className="bar-track"><div className="bar-fill" style={{ width: `${(g.lista.length / max) * 100}%` }} /></div>
+            <div className="bv">{g.lista.length}</div>
+            <div className="bp">{Math.round((g.lista.length / total) * 100)}%</div>
+          </div>
+        ))}
+      </div>
+      {sel && <TopicoModal topico={sel.topico} lista={sel.lista} onClose={() => setAberto(null)} />}
+    </>
+  );
+}
+
 /* ---------------- Motivos de Contato (feed das análises da IA por atendimento) ---------------- */
 function MotivosContato({ lista }: { lista: AtendUI[] }) {
   if (!lista.length) return <div className="empty">sem análises da IA ainda</div>;
@@ -616,8 +718,8 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Principais Dúvidas</div><div className="cap">clique numa dúvida pra ver os contatos · <span className="chip">motivo_do_contato</span></div></div><div className="right"><div className="rlab">tópicos</div><div className="rnum">{m.topicos.length}</div></div></div>
-        {m.contatos.length ? <DuvidasDrill contatos={contatosIA} /> : <Bars data={m.topicos} />}
+        <div className="card-head"><div><div className="title">Principais Dúvidas</div><div className="cap">tópicos das análises da IA · clique pra ver e abrir a conversa · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">análises</div><div className="rnum">{fmt(atendsNomeados.length)}</div></div></div>
+        <PrincipaisTopicos atends={atendsNomeados} />
       </section>
 
       <section className="card">
@@ -630,10 +732,6 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
         <VolumePorDia atends={atendsNomeados} />
       </section>
 
-      <section className="card">
-        <div className="card-head"><div><div className="title">Motivos de Contato</div><div className="cap">o que a IA entendeu de cada atendimento · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">análises</div><div className="rnum">{fmt(atendsResumo.length)}</div></div></div>
-        <MotivosContato lista={atendsResumo} />
-      </section>
 
       <section className="card">
         <div className="card-head"><div><div className="title">Atendimentos</div><div className="cap">contatos do Max · clique pra ver o perfil</div></div><div className="right"><div className="rlab">contatos</div><div className="rnum">{m.contatos.length}</div></div></div>
