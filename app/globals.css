@@ -589,7 +589,7 @@ tr.detail .inner{background:var(--panel-2);padding:12px 14px 13px 50px;border-to
 .vol{position:relative;display:flex;align-items:stretch;gap:14px;height:200px;padding:6px 4px 0}
 .vcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
 .vbar{flex:1;width:100%;min-height:0;display:flex;align-items:flex-end;justify-content:center}
-.vstack{width:60%;max-width:46px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:7px;overflow:hidden;background:var(--track);transition:filter .12s}
+.vstack{width:60%;max-width:46px;background:linear-gradient(180deg,var(--accent-2),var(--accent));border-radius:6px 6px 0 0;min-height:2px;transition:filter .12s}
 .vcol:hover .vstack{filter:brightness(1.2)}
 .vseg-esc{background:linear-gradient(135deg,var(--accent),var(--accent-2));min-height:0}
 .vseg-rest{background:var(--track);min-height:0}

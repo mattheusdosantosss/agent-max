@@ -139,34 +139,38 @@ function DuvidasDrill({ contatos }: { contatos: Contato[] }) {
 }
 
 /* ---------------- Volume por período (chamaram × escalados) ---------------- */
-function VolumePorDia({ contatos }: { contatos: Contato[] }) {
-  const [modo, setModo] = useState<"dia" | "semana" | "mes">("mes");
-  const [tip, setTip] = useState<{ x: number; y: number; label: string; cham: number; esc: number } | null>(null);
+function diaBRT(ts: number): string {
+  try { return new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+  catch { return new Date(ts).toISOString().slice(0, 10); }
+}
+function VolumePorDia({ atends }: { atends: AtendUI[] }) {
+  const [modo, setModo] = useState<"dia" | "semana" | "mes">("dia");
+  const [tip, setTip] = useState<{ x: number; y: number; label: string; n: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const periodos = useMemo(() => {
-    const m = new Map<string, { label: string; ord: string; cham: number; esc: number }>();
-    for (const c of contatos) {
-      const iso = c.criadoEm; if (!iso) continue;
-      const d = new Date(iso); if (isNaN(d.getTime())) continue;
+    const m = new Map<string, { label: string; ord: string; n: number }>();
+    for (const a of atends) {
+      const dia = diaBRT(a.inicio); if (!dia) continue;
       let key: string, label: string;
-      if (modo === "dia") { key = iso.slice(0, 10); label = `${iso.slice(8, 10)}/${iso.slice(5, 7)}`; }
-      else if (modo === "mes") { key = iso.slice(0, 7); const [y, mo] = key.split("-"); label = `${mo}/${y.slice(2)}`; }
+      if (modo === "dia") { key = dia; label = `${dia.slice(8, 10)}/${dia.slice(5, 7)}`; }
+      else if (modo === "mes") { key = dia.slice(0, 7); label = `${key.slice(5, 7)}/${key.slice(2, 4)}`; }
       else {
-        const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-        const dow = (tmp.getUTCDay() + 6) % 7; tmp.setUTCDate(tmp.getUTCDate() - dow);
-        key = tmp.toISOString().slice(0, 10); label = `${key.slice(8, 10)}/${key.slice(5, 7)}`;
+        const d = new Date(dia + "T00:00:00Z");
+        const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow);
+        key = d.toISOString().slice(0, 10); label = `${key.slice(8, 10)}/${key.slice(5, 7)}`;
       }
-      if (!m.has(key)) m.set(key, { label, ord: key, cham: 0, esc: 0 });
-      const o = m.get(key)!; o.cham++; if (c.escalou) o.esc++;
+      if (!m.has(key)) m.set(key, { label, ord: key, n: 0 });
+      m.get(key)!.n++;
     }
     return [...m.values()].sort((a, b) => a.ord.localeCompare(b.ord));
-  }, [contatos, modo]);
-  if (!periodos.length) return <div className="empty">sem datas registradas ainda</div>;
-  const vmax = Math.max(...periodos.map((p) => p.cham));
+  }, [atends, modo]);
+  if (!periodos.length) return <div className="empty">sem atendimentos registrados ainda</div>;
+  const vmax = Math.max(...periodos.map((p) => p.n));
+  const CHART = 150;
   return (
     <>
       <div className="vol-top">
-        <div className="vol-legend"><span><i className="i-cham" /> chamaram</span><span><i className="i-esc" /> escalados p/ humano</span></div>
+        <div className="vol-legend"><span><i className="i-esc" /> atendimentos no banco (Redis)</span></div>
         <div className="seg">
           {([["dia", "Dia"], ["semana", "Semana"], ["mes", "Mês"]] as const).map(([k, lbl]) => (
             <button key={k} className={modo === k ? "on" : ""} onClick={() => setModo(k)}>{lbl}</button>
@@ -176,19 +180,13 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
       <div className="vol-wrap" ref={boxRef}>
         <div className="vol">
           {periodos.map((p) => {
-            const h = (p.cham / vmax) * 100;
-            const escFrac = p.cham ? p.esc / p.cham : 0;
+            const px = Math.max(2, Math.round((p.n / vmax) * CHART));
             return (
               <div className="vcol" key={p.ord}
-                onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, label: p.label, cham: p.cham, esc: p.esc }); }}
+                onMouseMove={(e) => { const b = boxRef.current?.getBoundingClientRect(); if (b) setTip({ x: e.clientX - b.left, y: e.clientY - b.top, label: p.label, n: p.n }); }}
                 onMouseLeave={() => setTip(null)}>
-                <span className="vtot">{p.cham}</span>
-                <div className="vbar">
-                  <div className="vstack" style={{ height: `${h}%` }}>
-                    <div className="vseg-rest" style={{ flex: 1 - escFrac }} />
-                    <div className="vseg-esc" style={{ flex: escFrac }} />
-                  </div>
-                </div>
+                <span className="vtot">{p.n}</span>
+                <div className="vbar"><div className="vstack" style={{ height: `${px}px` }} /></div>
                 <span className="vx">{p.label}</span>
               </div>
             );
@@ -196,7 +194,7 @@ function VolumePorDia({ contatos }: { contatos: Contato[] }) {
         </div>
         {tip && (
           <div className="vtip on" style={{ left: tip.x, top: tip.y - 10 }}>
-            <b>{tip.label}</b> · <span className="tn">{tip.cham}</span> chamaram · <span className="tn">{tip.esc}</span> escalados ({tip.cham ? Math.round((tip.esc / tip.cham) * 100) : 0}%)
+            <b>{tip.label}</b> · <span className="tn">{tip.n}</span> atendimento(s)
           </div>
         )}
       </div>
@@ -544,8 +542,8 @@ export default function Dashboard({ initial }: { initial: Metrics }) {
       </section>
 
       <section className="card">
-        <div className="card-head"><div><div className="title">Volume por dia</div><div className="cap">quantos chamaram o Max e quantos foram escalados · <span className="chip">createdate</span></div></div><div className="right"><div className="rlab">escalados</div><div className="rnum">{fmt(m.escaladas)}</div></div></div>
-        <VolumePorDia contatos={m.contatos} />
+        <div className="card-head"><div><div className="title">Volume por dia</div><div className="cap">atendimentos que o Max registrou · <span className="chip">Redis</span></div></div><div className="right"><div className="rlab">no banco</div><div className="rnum">{fmt(atends.length)}</div></div></div>
+        <VolumePorDia atends={atends} />
       </section>
 
       <div className="grid2">
